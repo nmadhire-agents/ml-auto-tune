@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+ALLOWED_METRICS = {"rmse", "mae", "r2"}
+ALLOWED_MODELS = {
+    "random_forest",
+    "extra_trees",
+    "hist_gradient_boosting",
+    "ridge",
+    "elastic_net",
+}
+
+
+@dataclass(frozen=True)
+class DataSettings:
+    path: Path
+    target: str
+    validation_size: float = 0.25
+    random_state: int = 42
+
+
+@dataclass(frozen=True)
+class OptimizationSettings:
+    metric: str = "rmse"
+    n_trials: int = 20
+    timeout_seconds: int | None = None
+    plateau_trials: int = 5
+    min_delta: float = 0.001
+    study_name: str = "ml-auto-tune"
+    random_state: int = 42
+
+
+@dataclass(frozen=True)
+class AdvisorSettings:
+    enabled: bool = True
+    provider: str = "mock"
+    trigger: str = "plateau"
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class OutputSettings:
+    directory: Path = Path("runs/latest")
+
+
+@dataclass(frozen=True)
+class TuningConfig:
+    data: DataSettings
+    optimization: OptimizationSettings = field(default_factory=OptimizationSettings)
+    advisor: AdvisorSettings = field(default_factory=AdvisorSettings)
+    output: OutputSettings = field(default_factory=OutputSettings)
+    models: tuple[str, ...] = ("random_forest", "hist_gradient_boosting", "ridge")
+
+    @property
+    def direction(self) -> str:
+        return "maximize" if self.optimization.metric == "r2" else "minimize"
+
+    def to_dict(self) -> dict[str, Any]:
+        result = asdict(self)
+        result["data"]["path"] = str(self.data.path)
+        result["output"]["directory"] = str(self.output.directory)
+        result["models"] = list(self.models)
+        result["direction"] = self.direction
+        return result
+
+
+def load_config(path: str | Path) -> TuningConfig:
+    config_path = Path(path).expanduser().resolve()
+    with config_path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    if not isinstance(raw, dict):
+        raise ValueError("Config must be a YAML mapping.")
+    return parse_config(raw, base_dir=config_path.parent)
+
+
+def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningConfig:
+    base = base_dir or Path.cwd()
+    data_raw = _mapping(raw.get("data"), "data")
+    opt_raw = _mapping(raw.get("optimization", {}), "optimization")
+    advisor_raw = _mapping(raw.get("advisor", {}), "advisor")
+    output_raw = _mapping(raw.get("output", {}), "output")
+
+    target = data_raw.get("target")
+    if not target:
+        raise ValueError("data.target is required.")
+
+    data_path_value = data_raw.get("path")
+    if not data_path_value:
+        raise ValueError("data.path is required.")
+    data_path = _resolve_path(data_path_value, base)
+
+    validation_size = float(data_raw.get("validation_size", 0.25))
+    if not 0 < validation_size < 1:
+        raise ValueError("data.validation_size must be between 0 and 1.")
+
+    metric = str(opt_raw.get("metric", "rmse")).lower()
+    if metric not in ALLOWED_METRICS:
+        raise ValueError(f"optimization.metric must be one of {sorted(ALLOWED_METRICS)}.")
+
+    n_trials = int(opt_raw.get("n_trials", 20))
+    if n_trials < 1:
+        raise ValueError("optimization.n_trials must be at least 1.")
+
+    plateau_trials = int(opt_raw.get("plateau_trials", 5))
+    if plateau_trials < 1:
+        raise ValueError("optimization.plateau_trials must be at least 1.")
+
+    model_names = tuple(raw.get("models", ("random_forest", "hist_gradient_boosting", "ridge")))
+    unknown_models = sorted(set(model_names) - ALLOWED_MODELS)
+    if unknown_models:
+        raise ValueError(f"Unknown model names: {unknown_models}.")
+    if not model_names:
+        raise ValueError("models must include at least one model name.")
+
+    timeout_value = opt_raw.get("timeout_seconds")
+    timeout_seconds = int(timeout_value) if timeout_value is not None else None
+
+    trigger = str(advisor_raw.get("trigger", "plateau"))
+    if trigger not in {"plateau", "end"}:
+        raise ValueError("advisor.trigger must be 'plateau' or 'end'.")
+
+    provider = str(advisor_raw.get("provider", "mock"))
+    if provider not in {"mock", "openai_compatible"}:
+        raise ValueError("advisor.provider must be 'mock' or 'openai_compatible'.")
+
+    output_directory = _resolve_path(output_raw.get("directory", "runs/latest"), base)
+
+    return TuningConfig(
+        data=DataSettings(
+            path=data_path,
+            target=str(target),
+            validation_size=validation_size,
+            random_state=int(data_raw.get("random_state", 42)),
+        ),
+        optimization=OptimizationSettings(
+            metric=metric,
+            n_trials=n_trials,
+            timeout_seconds=timeout_seconds,
+            plateau_trials=plateau_trials,
+            min_delta=float(opt_raw.get("min_delta", 0.001)),
+            study_name=str(opt_raw.get("study_name", "ml-auto-tune")),
+            random_state=int(opt_raw.get("random_state", 42)),
+        ),
+        advisor=AdvisorSettings(
+            enabled=bool(advisor_raw.get("enabled", True)),
+            provider=provider,
+            trigger=trigger,
+            api_key=advisor_raw.get("api_key"),
+            base_url=advisor_raw.get("base_url"),
+            model=advisor_raw.get("model"),
+        ),
+        output=OutputSettings(directory=output_directory),
+        models=model_names,
+    )
+
+
+def _mapping(value: Any, name: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a mapping.")
+    return value
+
+
+def _resolve_path(value: str | Path, base: Path) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base / path
+    return path.resolve()
+

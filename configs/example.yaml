@@ -1,0 +1,29 @@
+data:
+  path: ../data/sample_regression.csv
+  target: target
+  validation_size: 0.25
+  random_state: 42
+
+optimization:
+  metric: rmse
+  n_trials: 12
+  plateau_trials: 4
+  min_delta: 0.001
+  study_name: sample-regression
+  random_state: 42
+
+advisor:
+  enabled: true
+  provider: mock
+  trigger: plateau
+
+output:
+  directory: ../runs/example
+
+models:
+  - random_forest
+  - extra_trees
+  - hist_gradient_boosting
+  - ridge
+  - elastic_net
+

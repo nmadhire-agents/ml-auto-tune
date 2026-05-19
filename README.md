@@ -122,11 +122,20 @@ configs/example.yaml
 
 ### `data`
 
-- `path` (required): CSV file path
-- `target` (required): target column
-- `features` (optional): explicit input feature list; if omitted, all non-target columns are used
-- `validation_size` (default `0.25`): validation split fraction `(0,1)`
-- `random_state` (default `42`): base split seed
+- `data.path`: CSV path
+- `data.target`: target column name
+- `data.features`: optional explicit feature list; defaults to all non-target columns
+- `data.validation_size`: validation split fraction
+- `optimization.metric`: one of `rmse`, `mae`, or `r2`
+- `optimization.n_trials`: Optuna trial budget
+- `optimization.plateau_trials`: number of non-improving trials before advisor advice
+- `optimization.min_delta`: minimum score change counted as improvement
+- `optimization.repeated_splits`: when true, each trial uses a different deterministic train/validation split seed
+- `advisor.enabled`: enable or disable advisor calls
+- `advisor.provider`: `mock` or `openai_compatible`
+- `advisor.trigger`: `plateau`, `end`, or `each_trial`
+- `output.directory`: local artifact directory
+- `models`: candidate sklearn regressor families
 
 ### `optimization`
 

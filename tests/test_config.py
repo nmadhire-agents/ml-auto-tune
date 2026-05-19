@@ -10,7 +10,9 @@ def test_parse_config_resolves_paths(tmp_path: Path) -> None:
         {
             "data": {"path": "sample.csv", "target": "target"},
             "output": {"directory": "runs/test"},
-            "models": ["ridge"],
+            "optimization": {"repeated_splits": True},
+            "advisor": {"trigger": "each_trial"},
+            "models": ["linear_regression"],
         },
         base_dir=tmp_path,
     )
@@ -18,6 +20,9 @@ def test_parse_config_resolves_paths(tmp_path: Path) -> None:
     assert config.data.path == tmp_path / "sample.csv"
     assert config.output.directory == tmp_path / "runs/test"
     assert config.direction == "minimize"
+    assert config.models == ("linear_regression",)
+    assert config.optimization.repeated_splits is True
+    assert config.advisor.trigger == "each_trial"
 
 
 def test_parse_config_rejects_unknown_model(tmp_path: Path) -> None:
@@ -29,4 +34,3 @@ def test_parse_config_rejects_unknown_model(tmp_path: Path) -> None:
             },
             base_dir=tmp_path,
         )
-

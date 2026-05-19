@@ -18,10 +18,11 @@ def test_run_tuning_writes_expected_artifacts(tmp_path: Path) -> None:
                 "plateau_trials": 1,
                 "min_delta": 1_000_000,
                 "study_name": "test-study",
+                "repeated_splits": True,
             },
-            "advisor": {"enabled": True, "provider": "mock", "trigger": "plateau"},
+            "advisor": {"enabled": True, "provider": "mock", "trigger": "each_trial"},
             "output": {"directory": str(tmp_path / "run")},
-            "models": ["ridge", "elastic_net"],
+            "models": ["linear_regression"],
         },
         base_dir=tmp_path,
     )
@@ -34,6 +35,9 @@ def test_run_tuning_writes_expected_artifacts(tmp_path: Path) -> None:
     assert (tmp_path / "run" / "trials.csv").exists()
     assert (tmp_path / "run" / "advisor_advice.md").exists()
     assert result.advisor_responses
+    assert len(result.advisor_responses) == 3
+    assert result.best_params["model"] == "linear_regression"
+    assert "R2=" in result.advisor_responses[0].markdown
 
 
 def test_sample_data_has_numeric_target(tmp_path: Path) -> None:

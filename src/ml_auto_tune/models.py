@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import ElasticNet, Ridge
+from sklearn.linear_model import ElasticNet, LinearRegression, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -67,6 +67,8 @@ def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
 
 
 def _build_estimator(trial: optuna.Trial, model_name: str, random_state: int):
+    if model_name == "linear_regression":
+        return LinearRegression()
     if model_name == "random_forest":
         return RandomForestRegressor(
             n_estimators=trial.suggest_int("random_forest_n_estimators", 50, 250, step=50),
@@ -103,4 +105,3 @@ def _build_estimator(trial: optuna.Trial, model_name: str, random_state: int):
             max_iter=10_000,
         )
     raise ValueError(f"Unsupported model: {model_name}")
-

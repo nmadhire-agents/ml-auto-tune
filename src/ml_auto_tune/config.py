@@ -8,6 +8,7 @@ import yaml
 
 ALLOWED_METRICS = {"rmse", "mae", "r2"}
 ALLOWED_MODELS = {
+    "linear_regression",
     "random_forest",
     "extra_trees",
     "hist_gradient_boosting",
@@ -33,6 +34,7 @@ class OptimizationSettings:
     min_delta: float = 0.001
     study_name: str = "ml-auto-tune"
     random_state: int = 42
+    repeated_splits: bool = False
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,7 @@ class TuningConfig:
     optimization: OptimizationSettings = field(default_factory=OptimizationSettings)
     advisor: AdvisorSettings = field(default_factory=AdvisorSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
-    models: tuple[str, ...] = ("random_forest", "hist_gradient_boosting", "ridge")
+    models: tuple[str, ...] = ("linear_regression",)
 
     @property
     def direction(self) -> str:
@@ -112,7 +114,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     if plateau_trials < 1:
         raise ValueError("optimization.plateau_trials must be at least 1.")
 
-    model_names = tuple(raw.get("models", ("random_forest", "hist_gradient_boosting", "ridge")))
+    model_names = tuple(raw.get("models", ("linear_regression",)))
     unknown_models = sorted(set(model_names) - ALLOWED_MODELS)
     if unknown_models:
         raise ValueError(f"Unknown model names: {unknown_models}.")
@@ -123,8 +125,8 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     timeout_seconds = int(timeout_value) if timeout_value is not None else None
 
     trigger = str(advisor_raw.get("trigger", "plateau"))
-    if trigger not in {"plateau", "end"}:
-        raise ValueError("advisor.trigger must be 'plateau' or 'end'.")
+    if trigger not in {"plateau", "end", "each_trial"}:
+        raise ValueError("advisor.trigger must be 'plateau', 'end', or 'each_trial'.")
 
     provider = str(advisor_raw.get("provider", "mock"))
     if provider not in {"mock", "openai_compatible"}:
@@ -147,6 +149,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
             min_delta=float(opt_raw.get("min_delta", 0.001)),
             study_name=str(opt_raw.get("study_name", "ml-auto-tune")),
             random_state=int(opt_raw.get("random_state", 42)),
+            repeated_splits=bool(opt_raw.get("repeated_splits", False)),
         ),
         advisor=AdvisorSettings(
             enabled=bool(advisor_raw.get("enabled", True)),
@@ -174,4 +177,3 @@ def _resolve_path(value: str | Path, base: Path) -> Path:
     if not path.is_absolute():
         path = base / path
     return path.resolve()
-

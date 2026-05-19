@@ -22,6 +22,7 @@ class AdvisorContext:
     available_models: list[str]
     active_models: list[str]
     recent_trials: list[dict[str, Any]]
+    validation_metrics: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -40,13 +41,29 @@ class MockAdvisor:
     def advise(self, context: AdvisorContext) -> AdvisorResponse:
         models = [
             model
-            for model in ["hist_gradient_boosting", "random_forest", "extra_trees", "ridge", "elastic_net"]
+            for model in [
+                "linear_regression",
+                "ridge",
+                "elastic_net",
+                "hist_gradient_boosting",
+                "random_forest",
+                "extra_trees",
+            ]
             if model in context.available_models
         ]
-        markdown = (
-            "Mock advisor: tuning has plateaued. Keep stronger nonlinear models active, "
-            "review feature quality, and consider widening tree depth or boosting iterations."
-        )
+        if context.validation_metrics:
+            metrics = context.validation_metrics
+            markdown = (
+                "Mock advisor: evaluated the current validation metrics. "
+                f"RMSE={metrics['rmse']:.4f}, MAE={metrics['mae']:.4f}, R2={metrics['r2']:.4f}. "
+                "Linear regression is a useful baseline; treat it as best only after comparing it "
+                "against regularized linear models and nonlinear tree/boosting models on the same split."
+            )
+        else:
+            markdown = (
+                "Mock advisor: tuning has plateaued. Keep linear and regularized baselines active, "
+                "then compare against nonlinear models before declaring the model best."
+            )
         return AdvisorResponse(
             markdown=markdown,
             structured_suggestions={"model_candidates": models or context.active_models},
@@ -79,6 +96,7 @@ class OpenAICompatibleAdvisor:
                         "role": "system",
                         "content": (
                             "You advise an automated sklearn regression tuner. "
+                            "Use validation metrics to assess whether the current model appears strong. "
                             "Return compact JSON with keys markdown and structured_suggestions. "
                             "Only suggest model_candidates from the provided allowed models."
                         ),
@@ -119,6 +137,7 @@ def _build_prompt(context: AdvisorContext) -> str:
             "allowed_models": context.available_models,
             "active_models": context.active_models,
             "recent_trials": context.recent_trials,
+            "validation_metrics": context.validation_metrics,
             "response_schema": {
                 "markdown": "human-readable tuning advice",
                 "structured_suggestions": {
@@ -141,4 +160,3 @@ def _parse_advisor_json(raw: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {"markdown": raw, "structured_suggestions": {}}
     return parsed if isinstance(parsed, dict) else {"markdown": raw, "structured_suggestions": {}}
-

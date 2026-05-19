@@ -6,7 +6,7 @@ This project provides a local-first batch workflow for regression experiments:
 
 - load a CSV dataset
 - build an sklearn preprocessing and regression pipeline
-- search model and hyperparameter choices with Optuna TPE
+- search model, hyperparameter, and repeated split choices with Optuna TPE
 - detect tuning plateaus
 - ask an LLM advisor for tuning suggestions when configured
 - write reproducible run artifacts, metrics, trial history, and the fitted best model
@@ -39,7 +39,7 @@ Best score: ...
 Artifacts: .../runs/example
 ```
 
-The example uses the mock advisor, so it does not require network access or LLM credentials.
+The example trains `linear_regression` five times with different deterministic validation splits and asks the mock advisor after every trial, so it does not require network access or LLM credentials.
 
 ## Sample Data
 
@@ -94,14 +94,16 @@ Important sections:
 - `optimization.n_trials`: Optuna trial budget
 - `optimization.plateau_trials`: number of non-improving trials before advisor advice
 - `optimization.min_delta`: minimum score change counted as improvement
+- `optimization.repeated_splits`: when true, each trial uses a different deterministic train/validation split seed
 - `advisor.enabled`: enable or disable advisor calls
 - `advisor.provider`: `mock` or `openai_compatible`
-- `advisor.trigger`: `plateau` or `end`
+- `advisor.trigger`: `plateau`, `end`, or `each_trial`
 - `output.directory`: local artifact directory
 - `models`: candidate sklearn regressor families
 
 Supported model names:
 
+- `linear_regression`
 - `random_forest`
 - `extra_trees`
 - `hist_gradient_boosting`
@@ -121,8 +123,8 @@ runs/example/
 Generated files:
 
 - `config.resolved.yaml`: normalized config used by the run
-- `metrics.json`: optimized metric, best score, best params, and validation metrics
-- `trials.csv`: Optuna trial history
+- `metrics.json`: optimized metric, best score, best params, best split seed, and validation metrics
+- `trials.csv`: Optuna trial history, including split seeds and validation metrics
 - `best_model.joblib`: fitted sklearn pipeline using the best trial parameters
 - `advisor_advice.md`: mock or LLM advisor output
 - `run_summary.md`: concise human-readable run summary
@@ -137,7 +139,7 @@ The advisor is optional. The default example uses:
 advisor:
   enabled: true
   provider: mock
-  trigger: plateau
+  trigger: each_trial
 ```
 
 The mock advisor is deterministic and intended for local development, tests, and demos.
@@ -162,6 +164,7 @@ export ML_AUTO_TUNE_LLM_MODEL="..."
 Advisor behavior:
 
 - receives a compact summary of recent trials, current best score, best params, metric direction, available models, and plateau state
+- receives validation RMSE, MAE, and R2 when advice is requested after a trial or at the end
 - writes all advice to `advisor_advice.md`
 - accepts only safe structured `model_candidates` suggestions that match configured model names
 - applies safe model suggestions by enqueueing compatible Optuna trials
@@ -203,6 +206,12 @@ Run the example workflow:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
+```
+
+Inspect linear-regression metrics:
+
+```bash
+cat runs/example/metrics.json
 ```
 
 Useful files:

@@ -21,16 +21,29 @@ def load_regression_frame(settings: DataSettings) -> pd.DataFrame:
 
 def split_features_target(settings: DataSettings):
     frame = load_regression_frame(settings)
-    y = frame[settings.target]
-    X = frame.drop(columns=[settings.target])
+    return split_frame_features_target(
+        frame,
+        target=settings.target,
+        validation_size=settings.validation_size,
+        random_state=settings.random_state,
+    )
+
+
+def split_frame_features_target(
+    frame: pd.DataFrame,
+    target: str,
+    validation_size: float,
+    random_state: int,
+):
+    y = frame[target]
+    X = frame.drop(columns=[target])
     return train_test_split(
         X,
         y,
-        test_size=settings.validation_size,
-        random_state=settings.random_state,
+        test_size=validation_size,
+        random_state=random_state,
     )
 
 
 def ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-

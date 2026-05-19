@@ -6,24 +6,20 @@ data:
 
 optimization:
   metric: rmse
-  n_trials: 12
+  n_trials: 5
   plateau_trials: 4
   min_delta: 0.001
-  study_name: sample-regression
+  study_name: sample-linear-regression
   random_state: 42
+  repeated_splits: true
 
 advisor:
   enabled: true
   provider: mock
-  trigger: plateau
+  trigger: each_trial
 
 output:
   directory: ../runs/example
 
 models:
-  - random_forest
-  - extra_trees
-  - hist_gradient_boosting
-  - ridge
-  - elastic_net
-
+  - linear_regression

@@ -7,14 +7,13 @@ from typing import Any
 
 import joblib
 import optuna
-import pandas as pd
 import yaml
 from optuna.samplers import TPESampler
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 
 from ml_auto_tune.advisor import Advisor, AdvisorContext, AdvisorResponse, build_advisor
 from ml_auto_tune.config import ALLOWED_MODELS, TuningConfig
-from ml_auto_tune.data import split_features_target
+from ml_auto_tune.data import load_regression_frame, split_frame_features_target
 from ml_auto_tune.models import build_pipeline
 
 
@@ -28,7 +27,7 @@ class RunResult:
 
 
 def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResult:
-    X_train, X_valid, y_train, y_valid = split_features_target(config.data)
+    frame = load_regression_frame(config.data)
     output_dir = config.output.directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -46,10 +45,20 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
     trials_since_improvement = 0
 
     def objective(trial: optuna.Trial) -> float:
+        split_random_state = _trial_split_random_state(config, trial.number)
+        X_train, X_valid, y_train, y_valid = split_frame_features_target(
+            frame,
+            target=config.data.target,
+            validation_size=config.data.validation_size,
+            random_state=split_random_state,
+        )
         pipeline = build_pipeline(trial, X_train, config.models, config.optimization.random_state)
         pipeline.fit(X_train, y_train)
         predictions = pipeline.predict(X_valid)
-        return _score(config.optimization.metric, y_valid, predictions)
+        metrics = _all_metrics(y_valid, predictions)
+        trial.set_user_attr("split_random_state", split_random_state)
+        trial.set_user_attr("validation_metrics", metrics)
+        return metrics[config.optimization.metric]
 
     for _ in range(config.optimization.n_trials):
         study.optimize(objective, n_trials=1, timeout=config.optimization.timeout_seconds)
@@ -65,6 +74,20 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
         else:
             trials_since_improvement += 1
 
+        latest_trial = study.trials[-1]
+        if advisor_client and config.advisor.trigger == "each_trial":
+            advisor_responses.append(
+                advisor_client.advise(
+                    _build_advisor_context(
+                        config,
+                        study,
+                        active_models,
+                        trials_since_improvement,
+                        validation_metrics=latest_trial.user_attrs.get("validation_metrics"),
+                    )
+                )
+            )
+
         if (
             advisor_client
             and config.advisor.trigger == "plateau"
@@ -79,18 +102,34 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
                 study.enqueue_trial({"model": model_name}, skip_if_exists=True)
             trials_since_improvement = 0
 
-    if advisor_client and config.advisor.trigger == "end":
-        advisor_responses.append(
-            advisor_client.advise(_build_advisor_context(config, study, active_models, trials_since_improvement))
-        )
-
+    X_train, X_valid, y_train, y_valid = split_frame_features_target(
+        frame,
+        target=config.data.target,
+        validation_size=config.data.validation_size,
+        random_state=int(study.best_trial.user_attrs.get("split_random_state", config.data.random_state)),
+    )
     evaluation_pipeline = build_pipeline(study.best_trial, X_train, list(config.models), config.optimization.random_state)
     evaluation_pipeline.fit(X_train, y_train)
     validation_predictions = evaluation_pipeline.predict(X_valid)
     metrics = _all_metrics(y_valid, validation_predictions)
 
+    if advisor_client and config.advisor.trigger == "end":
+        advisor_responses.append(
+            advisor_client.advise(
+                _build_advisor_context(
+                    config,
+                    study,
+                    active_models,
+                    trials_since_improvement,
+                    validation_metrics=metrics,
+                )
+            )
+        )
+
     best_pipeline = build_pipeline(study.best_trial, X_train, list(config.models), config.optimization.random_state)
-    best_pipeline.fit(pd.concat([X_train, X_valid]), pd.concat([y_train, y_valid]))
+    X_all = frame.drop(columns=[config.data.target])
+    y_all = frame[config.data.target]
+    best_pipeline.fit(X_all, y_all)
 
     _write_artifacts(config, output_dir, study, best_pipeline, metrics, advisor_responses)
     return RunResult(
@@ -120,6 +159,12 @@ def _all_metrics(y_true, predictions) -> dict[str, float]:
     }
 
 
+def _trial_split_random_state(config: TuningConfig, trial_number: int) -> int:
+    if config.optimization.repeated_splits:
+        return config.data.random_state + trial_number
+    return config.data.random_state
+
+
 def _is_improved(current: float, previous: float, direction: str, min_delta: float) -> bool:
     if direction == "maximize":
         return current > previous + min_delta
@@ -131,6 +176,7 @@ def _build_advisor_context(
     study: optuna.Study,
     active_models: list[str],
     trials_since_improvement: int,
+    validation_metrics: dict[str, float] | None = None,
 ) -> AdvisorContext:
     trials = sorted(study.trials, key=lambda item: item.number)[-10:]
     recent_trials = [
@@ -139,6 +185,8 @@ def _build_advisor_context(
             "value": trial.value,
             "params": trial.params,
             "state": trial.state.name,
+            "split_random_state": trial.user_attrs.get("split_random_state"),
+            "validation_metrics": trial.user_attrs.get("validation_metrics"),
         }
         for trial in trials
     ]
@@ -152,6 +200,7 @@ def _build_advisor_context(
         available_models=sorted(ALLOWED_MODELS.intersection(config.models)),
         active_models=list(active_models),
         recent_trials=recent_trials,
+        validation_metrics=validation_metrics,
     )
 
 
@@ -179,12 +228,13 @@ def _write_artifacts(
         "direction": config.direction,
         "best_score": float(study.best_value),
         "best_params": dict(study.best_params),
+        "best_split_random_state": study.best_trial.user_attrs.get("split_random_state"),
         "validation_metrics": metrics,
     }
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as handle:
         json.dump(metrics_payload, handle, indent=2)
 
-    trials = study.trials_dataframe(attrs=("number", "value", "params", "state"))
+    trials = study.trials_dataframe(attrs=("number", "value", "params", "user_attrs", "state"))
     trials.to_csv(output_dir / "trials.csv", index=False)
     joblib.dump(best_pipeline, output_dir / "best_model.joblib")
 
@@ -200,6 +250,7 @@ def _write_artifacts(
         f"- Optimized metric: `{config.optimization.metric}` ({config.direction})",
         f"- Best score: `{float(study.best_value):.6f}`",
         f"- Best model: `{study.best_params.get('model', 'unknown')}`",
+        f"- Best split random state: `{study.best_trial.user_attrs.get('split_random_state')}`",
         f"- Advisor calls: `{len(advisor_responses)}`",
     ]
     (output_dir / "run_summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")

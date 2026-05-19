@@ -38,6 +38,7 @@ uv run ml-auto-tune make-sample-data --output data/sample_regression.csv --rows 
 - Keep the primary config format as YAML.
 - Keep CSV regression data as the v1 input shape.
 - Keep no-network tests possible by using the mock advisor.
+- The example config intentionally trains `linear_regression` across repeated deterministic validation splits and asks the advisor on `each_trial`.
 - Treat `runs/` as disposable local output; it is ignored by git.
 - Do not commit secrets, `.env`, local virtual environments, or generated run artifacts.
 
@@ -50,6 +51,7 @@ The LLM advisor must be auditable and conservative:
 - use OpenAI-compatible chat completions only when explicitly configured
 - read credentials from `ML_AUTO_TUNE_LLM_API_KEY`, `ML_AUTO_TUNE_LLM_BASE_URL`, and `ML_AUTO_TUNE_LLM_MODEL`
 - only apply structured suggestions that map to known safe controls
+- include validation RMSE, MAE, and R2 when available
 
 For v1, safe applied suggestions are model-candidate hints that match configured model names. Other advice should be recorded, not blindly executed.
 

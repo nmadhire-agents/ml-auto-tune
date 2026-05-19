@@ -89,6 +89,7 @@ Important sections:
 
 - `data.path`: CSV path
 - `data.target`: target column name
+- `data.features`: optional explicit feature list; defaults to all non-target columns
 - `data.validation_size`: validation split fraction
 - `optimization.metric`: one of `rmse`, `mae`, or `r2`
 - `optimization.n_trials`: Optuna trial budget

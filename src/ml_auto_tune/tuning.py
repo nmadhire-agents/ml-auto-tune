@@ -49,6 +49,7 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
         X_train, X_valid, y_train, y_valid = split_frame_features_target(
             frame,
             target=config.data.target,
+            features=config.data.features,
             validation_size=config.data.validation_size,
             random_state=split_random_state,
         )
@@ -105,6 +106,7 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
     X_train, X_valid, y_train, y_valid = split_frame_features_target(
         frame,
         target=config.data.target,
+        features=config.data.features,
         validation_size=config.data.validation_size,
         random_state=int(study.best_trial.user_attrs.get("split_random_state", config.data.random_state)),
     )
@@ -127,7 +129,7 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
         )
 
     best_pipeline = build_pipeline(study.best_trial, X_train, list(config.models), config.optimization.random_state)
-    X_all = frame.drop(columns=[config.data.target])
+    X_all = frame[list(config.data.features)] if config.data.features is not None else frame.drop(columns=[config.data.target])
     y_all = frame[config.data.target]
     best_pipeline.fit(X_all, y_all)
 

@@ -45,3 +45,30 @@ def test_sample_data_has_numeric_target(tmp_path: Path) -> None:
     frame = pd.read_csv(data_path)
 
     assert pd.api.types.is_numeric_dtype(frame["target"])
+
+
+def test_run_classification_tuning_writes_metrics(tmp_path: Path) -> None:
+    data_path = make_sample_data(tmp_path / "classification.csv", rows=90, task="classification")
+    config = parse_config(
+        {
+            "task": "classification",
+            "data": {"path": str(data_path), "target": "target"},
+            "optimization": {
+                "metric": "f1_macro",
+                "n_trials": 2,
+                "study_name": "classification-test",
+                "repeated_splits": True,
+            },
+            "advisor": {"enabled": True, "provider": "mock", "trigger": "end"},
+            "output": {"directory": str(tmp_path / "classification-run")},
+            "models": ["logistic_regression"],
+        },
+        base_dir=tmp_path,
+    )
+
+    result = run_tuning(config)
+
+    assert 0 <= result.best_score <= 1
+    assert set(result.metrics) == {"accuracy", "f1_macro", "roc_auc"}
+    assert result.best_params["model"] == "logistic_regression"
+    assert "Accuracy=" in result.advisor_responses[0].markdown

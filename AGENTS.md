@@ -2,7 +2,7 @@
 
 ## Project Shape
 
-This is a `uv`-managed Python 3.12 project for local batch tuning of tabular sklearn regression models.
+This is a `uv`-managed Python 3.12 project for local batch tuning of tabular sklearn regression and classification models.
 
 Use `uv` for every Python command. Do not rely on bare `python`, because local system Python may not match the project runtime.
 
@@ -20,25 +20,28 @@ Run tests:
 uv run pytest
 ```
 
-Run the sample workflow:
+Run the sample workflows:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
+uv run ml-auto-tune run --config configs/classification_example.yaml
 ```
 
 Regenerate sample data:
 
 ```bash
 uv run ml-auto-tune make-sample-data --output data/sample_regression.csv --rows 180
+uv run ml-auto-tune make-sample-data --task classification --output data/sample_classification.csv --rows 180
 ```
 
 ## Implementation Notes
 
 - Keep the public CLI entrypoint as `ml-auto-tune`.
 - Keep the primary config format as YAML.
-- Keep CSV regression data as the v1 input shape.
+- Keep CSV tabular data as the v1 input shape.
 - Keep no-network tests possible by using the mock advisor.
 - The example config intentionally trains `linear_regression` across repeated deterministic validation splits and asks the advisor on `each_trial`.
+- The classification example uses sklearn breast-cancer data and tunes classifier families with `f1_macro`.
 - Treat `runs/` as disposable local output; it is ignored by git.
 - Do not commit secrets, `.env`, local virtual environments, or generated run artifacts.
 
@@ -51,7 +54,7 @@ The LLM advisor must be auditable and conservative:
 - use OpenAI-compatible chat completions only when explicitly configured
 - read credentials from `ML_AUTO_TUNE_LLM_API_KEY`, `ML_AUTO_TUNE_LLM_BASE_URL`, and `ML_AUTO_TUNE_LLM_MODEL`
 - only apply structured suggestions that map to known safe controls
-- include validation RMSE, MAE, and R2 when available
+- include validation metrics when available: RMSE/MAE/R2 for regression and accuracy/F1/ROC-AUC for classification
 
 For v1, safe applied suggestions are model-candidate hints that match configured model names. Other advice should be recorded, not blindly executed.
 
@@ -67,6 +70,7 @@ For user-facing workflow changes, also run:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
+uv run ml-auto-tune run --config configs/classification_example.yaml
 ```
 
 The example run should produce:

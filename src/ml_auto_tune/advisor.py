@@ -14,6 +14,7 @@ from ml_auto_tune.config import AdvisorSettings
 @dataclass(frozen=True)
 class AdvisorContext:
     study_name: str
+    task: str
     metric: str
     direction: str
     best_score: float | None
@@ -48,21 +49,33 @@ class MockAdvisor:
                 "hist_gradient_boosting",
                 "random_forest",
                 "extra_trees",
+                "logistic_regression",
+                "hist_gradient_boosting_classifier",
+                "random_forest_classifier",
+                "extra_trees_classifier",
             ]
             if model in context.available_models
         ]
         if context.validation_metrics:
             metrics = context.validation_metrics
-            markdown = (
-                "Mock advisor: evaluated the current validation metrics. "
-                f"RMSE={metrics['rmse']:.4f}, MAE={metrics['mae']:.4f}, R2={metrics['r2']:.4f}. "
-                "Linear regression is a useful baseline; treat it as best only after comparing it "
-                "against regularized linear models and nonlinear tree/boosting models on the same split."
-            )
+            if context.task == "classification":
+                markdown = (
+                    "Mock advisor: evaluated the current validation metrics. "
+                    f"Accuracy={metrics['accuracy']:.4f}, F1 macro={metrics['f1_macro']:.4f}, "
+                    f"ROC-AUC={metrics['roc_auc']:.4f}. Confirm class balance and compare a linear "
+                    "classifier against tree-based classifiers before declaring the model best."
+                )
+            else:
+                markdown = (
+                    "Mock advisor: evaluated the current validation metrics. "
+                    f"RMSE={metrics['rmse']:.4f}, MAE={metrics['mae']:.4f}, R2={metrics['r2']:.4f}. "
+                    "Linear regression is a useful baseline; treat it as best only after comparing it "
+                    "against regularized linear models and nonlinear tree/boosting models on the same split."
+                )
         else:
             markdown = (
-                "Mock advisor: tuning has plateaued. Keep linear and regularized baselines active, "
-                "then compare against nonlinear models before declaring the model best."
+                "Mock advisor: tuning has plateaued. Compare simple baselines against stronger model "
+                "families before declaring the model best."
             )
         return AdvisorResponse(
             markdown=markdown,
@@ -95,7 +108,7 @@ class OpenAICompatibleAdvisor:
                     {
                         "role": "system",
                         "content": (
-                            "You advise an automated sklearn regression tuner. "
+                            "You advise an automated sklearn model tuner. "
                             "Use validation metrics to assess whether the current model appears strong. "
                             "Return compact JSON with keys markdown and structured_suggestions. "
                             "Only suggest model_candidates from the provided allowed models."
@@ -129,6 +142,7 @@ def _build_prompt(context: AdvisorContext) -> str:
     return json.dumps(
         {
             "study_name": context.study_name,
+            "task": context.task,
             "metric": context.metric,
             "direction": context.direction,
             "best_score": context.best_score,

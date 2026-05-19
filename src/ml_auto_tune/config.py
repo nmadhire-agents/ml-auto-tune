@@ -6,8 +6,11 @@ from typing import Any
 
 import yaml
 
-ALLOWED_METRICS = {"rmse", "mae", "r2"}
-ALLOWED_MODELS = {
+ALLOWED_TASKS = {"regression", "classification"}
+REGRESSION_METRICS = {"rmse", "mae", "r2"}
+CLASSIFICATION_METRICS = {"accuracy", "f1_macro", "roc_auc"}
+ALLOWED_METRICS = REGRESSION_METRICS | CLASSIFICATION_METRICS
+REGRESSION_MODELS = {
     "linear_regression",
     "random_forest",
     "extra_trees",
@@ -15,6 +18,13 @@ ALLOWED_MODELS = {
     "ridge",
     "elastic_net",
 }
+CLASSIFICATION_MODELS = {
+    "logistic_regression",
+    "random_forest_classifier",
+    "extra_trees_classifier",
+    "hist_gradient_boosting_classifier",
+}
+ALLOWED_MODELS = REGRESSION_MODELS | CLASSIFICATION_MODELS
 
 
 @dataclass(frozen=True)
@@ -56,6 +66,7 @@ class OutputSettings:
 @dataclass(frozen=True)
 class TuningConfig:
     data: DataSettings
+    task: str = "regression"
     optimization: OptimizationSettings = field(default_factory=OptimizationSettings)
     advisor: AdvisorSettings = field(default_factory=AdvisorSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
@@ -63,6 +74,8 @@ class TuningConfig:
 
     @property
     def direction(self) -> str:
+        if self.task == "classification":
+            return "maximize"
         return "maximize" if self.optimization.metric == "r2" else "minimize"
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,6 +98,10 @@ def load_config(path: str | Path) -> TuningConfig:
 
 def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningConfig:
     base = base_dir or Path.cwd()
+    task = str(raw.get("task", "regression")).lower()
+    if task not in ALLOWED_TASKS:
+        raise ValueError(f"task must be one of {sorted(ALLOWED_TASKS)}.")
+
     data_raw = _mapping(raw.get("data"), "data")
     opt_raw = _mapping(raw.get("optimization", {}), "optimization")
     advisor_raw = _mapping(raw.get("advisor", {}), "advisor")
@@ -111,8 +128,9 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
             raise ValueError("data.features must include at least one column when provided.")
 
     metric = str(opt_raw.get("metric", "rmse")).lower()
-    if metric not in ALLOWED_METRICS:
-        raise ValueError(f"optimization.metric must be one of {sorted(ALLOWED_METRICS)}.")
+    allowed_metrics = CLASSIFICATION_METRICS if task == "classification" else REGRESSION_METRICS
+    if metric not in allowed_metrics:
+        raise ValueError(f"optimization.metric must be one of {sorted(allowed_metrics)} for task '{task}'.")
 
     n_trials = int(opt_raw.get("n_trials", 20))
     if n_trials < 1:
@@ -122,10 +140,12 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     if plateau_trials < 1:
         raise ValueError("optimization.plateau_trials must be at least 1.")
 
-    model_names = tuple(raw.get("models", ("linear_regression",)))
-    unknown_models = sorted(set(model_names) - ALLOWED_MODELS)
+    default_models = ("logistic_regression",) if task == "classification" else ("linear_regression",)
+    allowed_models = CLASSIFICATION_MODELS if task == "classification" else REGRESSION_MODELS
+    model_names = tuple(raw.get("models", default_models))
+    unknown_models = sorted(set(model_names) - allowed_models)
     if unknown_models:
-        raise ValueError(f"Unknown model names: {unknown_models}.")
+        raise ValueError(f"Unknown model names for task '{task}': {unknown_models}.")
     if not model_names:
         raise ValueError("models must include at least one model name.")
 
@@ -143,6 +163,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     output_directory = _resolve_path(output_raw.get("directory", "runs/latest"), base)
 
     return TuningConfig(
+        task=task,
         data=DataSettings(
             path=data_path,
             target=str(target),

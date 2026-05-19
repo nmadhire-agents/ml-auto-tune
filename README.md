@@ -1,6 +1,6 @@
 # ml-auto-tune
 
-Config-driven local batch tuning for tabular **sklearn regression** with Optuna and optional LLM advice.
+Config-driven local batch tuning for tabular **sklearn regression and classification** with Optuna and optional LLM advice.
 
 The goal is to let users control the workflow from YAML (dataset, target/features, models, optimization, advisor, outputs) while keeping tuning reproducible and auditable.
 
@@ -8,11 +8,13 @@ All Python commands in this repository should be run through `uv`.
 
 ## What this project does
 
-- Loads regression CSV data.
-- Builds sklearn preprocessing + regressor pipelines.
+- Loads regression or classification CSV data.
+- Builds sklearn preprocessing + estimator pipelines.
 - Tunes model family and hyperparameters with Optuna (TPE sampler).
 - Supports deterministic repeated train/validation splits.
-- Captures validation metrics (`rmse`, `mae`, `r2`) per trial.
+- Captures validation metrics per trial.
+  - Regression: `rmse`, `mae`, `r2`
+  - Classification: `accuracy`, `f1_macro`, `roc_auc`
 - Optionally asks an advisor (`mock` or OpenAI-compatible chat completions).
 - Applies only safe structured advisor suggestions (`model_candidates` limited to configured models).
 - Writes reproducible run artifacts (resolved config, metrics, trial history, model, advisor notes, summary).
@@ -72,7 +74,7 @@ uv sync
 
 ## Quick start
 
-Run the bundled sample workflow:
+Run the bundled regression sample workflow:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
@@ -91,6 +93,31 @@ The sample config is intentionally local/offline-friendly:
 - uses repeated deterministic validation splits
 - calls the **mock advisor** on `each_trial`
 - needs no network and no LLM credentials
+
+Run the bundled classification sample workflow:
+
+```bash
+uv run ml-auto-tune run --config configs/classification_example.yaml
+```
+
+Expected output:
+
+```text
+Best score: ...
+Artifacts: .../runs/classification-example
+```
+
+## LLM advisor: what changes?
+
+The optimizer does not require an LLM. Optuna still runs trials, scores models, selects the best trial, and writes artifacts without any advisor.
+
+| Mode | What happens | What you gain | What you do not get |
+| --- | --- | --- | --- |
+| No LLM | Runs deterministic tuning and writes metrics, trials, model, and summary. | Fast, cheap, reproducible tuning with no credentials or network. | No natural-language interpretation, no suggestions when the search space is too narrow, no diagnosis of why progress stalled. |
+| Mock advisor | Uses local deterministic advice for tests and demos. | Exercises the advisor workflow without secrets or API calls. | Advice is generic and not truly reasoned over the problem. |
+| OpenAI-compatible advisor | Sends compact trial history, metrics, current best result, model choices, and response schema to an LLM. | Human-readable diagnosis, suggestions for next search-space changes, warnings about weak baselines, and a written explanation in `advisor_advice.md`. | It does not replace validation metrics, and v1 only auto-applies safe structured `model_candidates` suggestions. Free-form advice is recorded for review. |
+
+Use an LLM when you want help interpreting the run, deciding whether the model is likely “good enough,” or choosing what to try next after a plateau. Skip the LLM when you only need repeatable metric-driven tuning.
 
 ## Real example: repeated linear regression with advice
 
@@ -178,7 +205,7 @@ Run the same five-trial linear-regression workflow. The OpenAI advisor receives 
 The advisor call uses this system instruction:
 
 ```text
-You advise an automated sklearn regression tuner. Use validation metrics to assess whether the current model appears strong. Return compact JSON with keys markdown and structured_suggestions. Only suggest model_candidates from the provided allowed models.
+You advise an automated sklearn model tuner. Use validation metrics to assess whether the current model appears strong. Return compact JSON with keys markdown and structured_suggestions. Only suggest model_candidates from the provided allowed models.
 ```
 
 For this run, the user prompt sent to the advisor looked like this:
@@ -293,23 +320,106 @@ The current linear regression model achieves an RMSE of 46.43 and an R² of 0.60
 
 The system records the advice in `advisor_advice.md`. It only auto-applies safe structured suggestions that map to configured model candidates; free-form guidance is stored for review.
 
+## Real example: classification tuning
+
+The classification example uses `data/sample_classification.csv`, derived from sklearn's breast-cancer dataset. It tunes several classifier families and optimizes `f1_macro`.
+
+Key config:
+
+```yaml
+task: classification
+
+optimization:
+  metric: f1_macro
+  n_trials: 8
+  repeated_splits: true
+
+advisor:
+  enabled: true
+  provider: mock
+  trigger: end
+
+models:
+  - logistic_regression
+  - random_forest_classifier
+  - hist_gradient_boosting_classifier
+```
+
+Run it:
+
+```bash
+uv run ml-auto-tune run --config configs/classification_example.yaml
+```
+
+Example output:
+
+```text
+Best score: 0.975396
+Artifacts: /.../runs/classification-example
+```
+
+Observed trial metrics from the bundled sample data:
+
+| Trial | Split seed | Model | Accuracy | F1 macro | ROC-AUC |
+| ---: | ---: | --- | ---: | ---: | ---: |
+| 0 | 42 | `random_forest_classifier` | 0.9333 | 0.9237 | 0.9828 |
+| 1 | 43 | `logistic_regression` | 0.8444 | 0.8062 | 0.9978 |
+| 2 | 44 | `logistic_regression` | 0.9556 | 0.9500 | 1.0000 |
+| 3 | 45 | `hist_gradient_boosting_classifier` | 0.9111 | 0.9055 | 0.9892 |
+| 4 | 46 | `hist_gradient_boosting_classifier` | 0.9556 | 0.9500 | 0.9978 |
+| 5 | 47 | `random_forest_classifier` | 0.9778 | 0.9754 | 0.9978 |
+| 6 | 48 | `hist_gradient_boosting_classifier` | 0.9778 | 0.9754 | 1.0000 |
+| 7 | 49 | `logistic_regression` | 0.9333 | 0.9237 | 1.0000 |
+
+Best result:
+
+```json
+{
+  "optimized_metric": "f1_macro",
+  "direction": "maximize",
+  "best_score": 0.9753963914707491,
+  "best_params": {
+    "model": "random_forest_classifier",
+    "rf_classifier_n_estimators": 50,
+    "rf_classifier_max_depth": 18,
+    "rf_classifier_min_samples_leaf": 8,
+    "rf_classifier_max_features": 0.8850384088698767
+  },
+  "best_split_random_state": 47,
+  "validation_metrics": {
+    "accuracy": 0.9777777777777777,
+    "f1_macro": 0.9753963914707491,
+    "roc_auc": 0.9978448275862069
+  }
+}
+```
+
+The advisor note for this run is stored in `runs/classification-example/advisor_advice.md`. With the mock advisor, it is intentionally conservative:
+
+```text
+Mock advisor: evaluated the current validation metrics. Accuracy=0.9778, F1 macro=0.9754, ROC-AUC=0.9978. Confirm class balance and compare a linear classifier against tree-based classifiers before declaring the model best.
+```
+
 ## CLI
 
 ### Run tuning
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
+uv run ml-auto-tune run --config configs/classification_example.yaml
 ```
 
 ### Generate sample data
 
 ```bash
 uv run ml-auto-tune make-sample-data --output data/sample_regression.csv --rows 180
+uv run ml-auto-tune make-sample-data --task classification --output data/sample_classification.csv --rows 180
 ```
 
 Sample-data options:
 
 - `--output`: CSV output path
+- `--task`: `regression` or `classification`
 - `--rows`: number of rows
 - `--random-state`: deterministic sampling seed
 
@@ -319,7 +429,13 @@ Primary interface:
 
 ```text
 configs/example.yaml
+configs/classification_example.yaml
 ```
+
+### `task`
+
+- `task: regression`
+- `task: classification`
 
 ### `data`
 
@@ -327,7 +443,7 @@ configs/example.yaml
 - `data.target`: target column name
 - `data.features`: optional explicit feature list; defaults to all non-target columns
 - `data.validation_size`: validation split fraction
-- `optimization.metric`: one of `rmse`, `mae`, or `r2`
+- `optimization.metric`: regression uses `rmse`, `mae`, or `r2`; classification uses `accuracy`, `f1_macro`, or `roc_auc`
 - `optimization.n_trials`: Optuna trial budget
 - `optimization.plateau_trials`: number of non-improving trials before advisor advice
 - `optimization.min_delta`: minimum score change counted as improvement
@@ -336,7 +452,7 @@ configs/example.yaml
 - `advisor.provider`: `mock` or `openai_compatible`
 - `advisor.trigger`: `plateau`, `end`, or `each_trial`
 - `output.directory`: local artifact directory
-- `models`: candidate sklearn regressor families
+- `models`: candidate sklearn estimator families
 
 ### `optimization`
 
@@ -367,12 +483,21 @@ configs/example.yaml
 
 Candidate model families:
 
+Regression:
+
 - `linear_regression`
 - `random_forest`
 - `extra_trees`
 - `hist_gradient_boosting`
 - `ridge`
 - `elastic_net`
+
+Classification:
+
+- `logistic_regression`
+- `random_forest_classifier`
+- `extra_trees_classifier`
+- `hist_gradient_boosting_classifier`
 
 ## Advisor behavior and safety
 
@@ -433,10 +558,11 @@ Run tests:
 uv run pytest
 ```
 
-Run the sample workflow:
+Run the sample workflows:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
+uv run ml-auto-tune run --config configs/classification_example.yaml
 ```
 
 Inspect outputs:
@@ -445,6 +571,7 @@ Inspect outputs:
 cat runs/example/metrics.json
 cat runs/example/advisor_advice.md
 cat runs/example/run_summary.md
+cat runs/classification-example/metrics.json
 ```
 
 Useful files:
@@ -459,10 +586,9 @@ Useful files:
 
 ## Current scope
 
-v1 focuses on local batch **regression** tuning. It does not include:
+v1 focuses on local batch tabular sklearn tuning. It does not include:
 
 - a web service/UI
 - job scheduler/orchestrator
 - experiment database backend
 - distributed training
-- classification workflows

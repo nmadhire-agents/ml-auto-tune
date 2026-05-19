@@ -31,6 +31,7 @@ def split_features_target(settings: DataSettings):
         features=settings.features,
         validation_size=settings.validation_size,
         random_state=settings.random_state,
+        task="regression",
     )
 
 
@@ -40,14 +41,17 @@ def split_frame_features_target(
     features: tuple[str, ...] | None,
     validation_size: float,
     random_state: int,
+    task: str = "regression",
 ):
     y = frame[target]
     X = frame[list(features)] if features is not None else frame.drop(columns=[target])
+    stratify = y if task == "classification" and y.nunique() > 1 else None
     return train_test_split(
         X,
         y,
         test_size=validation_size,
         random_state=random_state,
+        stratify=stratify,
     )
 
 

@@ -17,6 +17,12 @@ def main(argv: list[str] | None = None) -> None:
 
     sample_parser = subparsers.add_parser("make-sample-data", help="Generate the bundled sample CSV.")
     sample_parser.add_argument("--output", default="data/sample_regression.csv", help="CSV output path.")
+    sample_parser.add_argument(
+        "--task",
+        choices=["regression", "classification"],
+        default="regression",
+        help="Sample dataset task type.",
+    )
     sample_parser.add_argument("--rows", type=int, default=180, help="Number of rows to include.")
     sample_parser.add_argument("--random-state", type=int, default=42, help="Sampling seed.")
 
@@ -29,9 +35,8 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "make-sample-data":
-        output = make_sample_data(Path(args.output), rows=args.rows, random_state=args.random_state)
+        output = make_sample_data(Path(args.output), rows=args.rows, random_state=args.random_state, task=args.task)
         print(f"Wrote sample data: {output}")
         return
 
     parser.error(f"Unknown command: {args.command}")
-

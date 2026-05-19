@@ -9,7 +9,7 @@ import joblib
 import optuna
 import yaml
 from optuna.samplers import TPESampler
-from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score, roc_auc_score, root_mean_squared_error
 
 from ml_auto_tune.advisor import Advisor, AdvisorContext, AdvisorResponse, build_advisor
 from ml_auto_tune.config import ALLOWED_MODELS, TuningConfig
@@ -52,11 +52,12 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
             features=config.data.features,
             validation_size=config.data.validation_size,
             random_state=split_random_state,
+            task=config.task,
         )
-        pipeline = build_pipeline(trial, X_train, config.models, config.optimization.random_state)
+        pipeline = build_pipeline(trial, X_train, config.models, config.optimization.random_state, task=config.task)
         pipeline.fit(X_train, y_train)
         predictions = pipeline.predict(X_valid)
-        metrics = _all_metrics(y_valid, predictions)
+        metrics = _all_metrics(config.task, y_valid, predictions, pipeline, X_valid)
         trial.set_user_attr("split_random_state", split_random_state)
         trial.set_user_attr("validation_metrics", metrics)
         return metrics[config.optimization.metric]
@@ -109,11 +110,18 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
         features=config.data.features,
         validation_size=config.data.validation_size,
         random_state=int(study.best_trial.user_attrs.get("split_random_state", config.data.random_state)),
+        task=config.task,
     )
-    evaluation_pipeline = build_pipeline(study.best_trial, X_train, list(config.models), config.optimization.random_state)
+    evaluation_pipeline = build_pipeline(
+        study.best_trial,
+        X_train,
+        list(config.models),
+        config.optimization.random_state,
+        task=config.task,
+    )
     evaluation_pipeline.fit(X_train, y_train)
     validation_predictions = evaluation_pipeline.predict(X_valid)
-    metrics = _all_metrics(y_valid, validation_predictions)
+    metrics = _all_metrics(config.task, y_valid, validation_predictions, evaluation_pipeline, X_valid)
 
     if advisor_client and config.advisor.trigger == "end":
         advisor_responses.append(
@@ -128,7 +136,13 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
             )
         )
 
-    best_pipeline = build_pipeline(study.best_trial, X_train, list(config.models), config.optimization.random_state)
+    best_pipeline = build_pipeline(
+        study.best_trial,
+        X_train,
+        list(config.models),
+        config.optimization.random_state,
+        task=config.task,
+    )
     X_all = frame[list(config.data.features)] if config.data.features is not None else frame.drop(columns=[config.data.target])
     y_all = frame[config.data.target]
     best_pipeline.fit(X_all, y_all)
@@ -143,22 +157,25 @@ def run_tuning(config: TuningConfig, advisor: Advisor | None = None) -> RunResul
     )
 
 
-def _score(metric: str, y_true, predictions) -> float:
-    if metric == "rmse":
-        return float(root_mean_squared_error(y_true, predictions))
-    if metric == "mae":
-        return float(mean_absolute_error(y_true, predictions))
-    if metric == "r2":
-        return float(r2_score(y_true, predictions))
-    raise ValueError(f"Unsupported metric: {metric}")
-
-
-def _all_metrics(y_true, predictions) -> dict[str, float]:
+def _all_metrics(task: str, y_true, predictions, pipeline, X_valid) -> dict[str, float]:
+    if task == "classification":
+        return {
+            "accuracy": float(accuracy_score(y_true, predictions)),
+            "f1_macro": float(f1_score(y_true, predictions, average="macro")),
+            "roc_auc": _roc_auc(y_true, pipeline, X_valid),
+        }
     return {
         "rmse": float(root_mean_squared_error(y_true, predictions)),
         "mae": float(mean_absolute_error(y_true, predictions)),
         "r2": float(r2_score(y_true, predictions)),
     }
+
+
+def _roc_auc(y_true, pipeline, X_valid) -> float:
+    probabilities = pipeline.predict_proba(X_valid)
+    if probabilities.shape[1] == 2:
+        return float(roc_auc_score(y_true, probabilities[:, 1]))
+    return float(roc_auc_score(y_true, probabilities, multi_class="ovr", average="macro"))
 
 
 def _trial_split_random_state(config: TuningConfig, trial_number: int) -> int:
@@ -194,6 +211,7 @@ def _build_advisor_context(
     ]
     return AdvisorContext(
         study_name=config.optimization.study_name,
+        task=config.task,
         metric=config.optimization.metric,
         direction=config.direction,
         best_score=float(study.best_value) if study.best_trial else None,

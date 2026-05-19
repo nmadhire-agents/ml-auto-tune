@@ -40,6 +40,35 @@ def test_parse_config_with_features(tmp_path: Path) -> None:
     assert config.data.features == ("age", "bmi")
 
 
+def test_parse_classification_config(tmp_path: Path) -> None:
+    config = parse_config(
+        {
+            "task": "classification",
+            "data": {"path": "sample.csv", "target": "target"},
+            "optimization": {"metric": "f1_macro"},
+            "models": ["logistic_regression", "random_forest_classifier"],
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.task == "classification"
+    assert config.direction == "maximize"
+    assert config.models == ("logistic_regression", "random_forest_classifier")
+
+
+def test_parse_classification_config_rejects_regression_metric(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="for task 'classification'"):
+        parse_config(
+            {
+                "task": "classification",
+                "data": {"path": "sample.csv", "target": "target"},
+                "optimization": {"metric": "rmse"},
+                "models": ["logistic_regression"],
+            },
+            base_dir=tmp_path,
+        )
+
+
 def test_parse_config_rejects_unknown_model(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Unknown model"):
         parse_config(

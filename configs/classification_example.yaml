@@ -1,0 +1,29 @@
+task: classification
+
+data:
+  path: ../data/sample_classification.csv
+  target: target
+  validation_size: 0.25
+  random_state: 42
+
+optimization:
+  metric: f1_macro
+  n_trials: 8
+  plateau_trials: 3
+  min_delta: 0.001
+  study_name: sample-classification
+  random_state: 42
+  repeated_splits: true
+
+advisor:
+  enabled: true
+  provider: mock
+  trigger: end
+
+output:
+  directory: ../runs/classification-example
+
+models:
+  - logistic_regression
+  - random_forest_classifier
+  - hist_gradient_boosting_classifier

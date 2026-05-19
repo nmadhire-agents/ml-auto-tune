@@ -173,7 +173,119 @@ export ML_AUTO_TUNE_LLM_API_KEY="$OPENAI_API_KEY"
 export ML_AUTO_TUNE_LLM_MODEL="gpt-4.1-mini"
 ```
 
-Run the same five-trial linear-regression workflow. The OpenAI advisor receives the best score, the best split seed, all recent trial metrics, and the final validation metrics. One real OpenAI advisor response for the bundled sample run was:
+Run the same five-trial linear-regression workflow. The OpenAI advisor receives the best score, the best split seed, all recent trial metrics, and the final validation metrics.
+
+The advisor call uses this system instruction:
+
+```text
+You advise an automated sklearn regression tuner. Use validation metrics to assess whether the current model appears strong. Return compact JSON with keys markdown and structured_suggestions. Only suggest model_candidates from the provided allowed models.
+```
+
+For this run, the user prompt sent to the advisor looked like this:
+
+```json
+{
+  "study_name": "sample-linear-regression",
+  "metric": "rmse",
+  "direction": "minimize",
+  "best_score": 46.427628004000084,
+  "best_params": {
+    "model": "linear_regression"
+  },
+  "trials_since_improvement": 3,
+  "allowed_models": [
+    "linear_regression"
+  ],
+  "active_models": [
+    "linear_regression"
+  ],
+  "recent_trials": [
+    {
+      "number": 0,
+      "value": 56.87686219678892,
+      "params": {
+        "model": "linear_regression"
+      },
+      "state": "COMPLETE",
+      "split_random_state": 42,
+      "validation_metrics": {
+        "rmse": 56.87686219678892,
+        "mae": 47.64585529441712,
+        "r2": 0.4271835845269567
+      }
+    },
+    {
+      "number": 1,
+      "value": 46.427628004000084,
+      "params": {
+        "model": "linear_regression"
+      },
+      "state": "COMPLETE",
+      "split_random_state": 43,
+      "validation_metrics": {
+        "rmse": 46.427628004000084,
+        "mae": 38.36655564277805,
+        "r2": 0.6024026519069032
+      }
+    },
+    {
+      "number": 2,
+      "value": 58.48014802364387,
+      "params": {
+        "model": "linear_regression"
+      },
+      "state": "COMPLETE",
+      "split_random_state": 44,
+      "validation_metrics": {
+        "rmse": 58.48014802364387,
+        "mae": 45.98208146689345,
+        "r2": 0.24796465445427862
+      }
+    },
+    {
+      "number": 3,
+      "value": 49.25863864410643,
+      "params": {
+        "model": "linear_regression"
+      },
+      "state": "COMPLETE",
+      "split_random_state": 45,
+      "validation_metrics": {
+        "rmse": 49.25863864410643,
+        "mae": 40.750769154611916,
+        "r2": 0.5658526187837658
+      }
+    },
+    {
+      "number": 4,
+      "value": 51.416383959104,
+      "params": {
+        "model": "linear_regression"
+      },
+      "state": "COMPLETE",
+      "split_random_state": 46,
+      "validation_metrics": {
+        "rmse": 51.416383959104,
+        "mae": 40.05693552923261,
+        "r2": 0.5578709979888179
+      }
+    }
+  ],
+  "validation_metrics": {
+    "rmse": 46.427628004000084,
+    "mae": 38.36655564277805,
+    "r2": 0.6024026519069032
+  },
+  "response_schema": {
+    "markdown": "human-readable tuning advice",
+    "structured_suggestions": {
+      "model_candidates": "optional list containing only allowed model names"
+    }
+  }
+}
+```
+
+The real OpenAI response for that prompt was:
 
 ```text
 The current linear regression model achieves an RMSE of 46.43 and an R² of 0.60, indicating moderate predictive performance. Given the limited model choice (only linear regression allowed) and recent trials showing no improvement beyond this RMSE, the model appears reasonably tuned within these constraints. Consider expanding allowed models or feature engineering to improve performance further.

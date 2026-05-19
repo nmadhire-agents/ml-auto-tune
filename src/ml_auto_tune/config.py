@@ -21,6 +21,7 @@ ALLOWED_MODELS = {
 class DataSettings:
     path: Path
     target: str
+    features: tuple[str, ...] | None = None
     validation_size: float = 0.25
     random_state: int = 42
 
@@ -102,6 +103,13 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     if not 0 < validation_size < 1:
         raise ValueError("data.validation_size must be between 0 and 1.")
 
+    features_raw = data_raw.get("features")
+    if features_raw is not None:
+        if not isinstance(features_raw, list) or not all(isinstance(item, str) for item in features_raw):
+            raise ValueError("data.features must be a list of column names.")
+        if not features_raw:
+            raise ValueError("data.features must include at least one column when provided.")
+
     metric = str(opt_raw.get("metric", "rmse")).lower()
     if metric not in ALLOWED_METRICS:
         raise ValueError(f"optimization.metric must be one of {sorted(ALLOWED_METRICS)}.")
@@ -138,6 +146,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
         data=DataSettings(
             path=data_path,
             target=str(target),
+            features=tuple(features_raw) if features_raw else None,
             validation_size=validation_size,
             random_state=int(data_raw.get("random_state", 42)),
         ),

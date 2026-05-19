@@ -1,22 +1,68 @@
 # ml-auto-tune
 
-Auto-tune tabular sklearn regression models with Optuna and optional LLM advice.
+Config-driven local batch tuning for tabular **sklearn regression** with Optuna and optional LLM advice.
 
-This project provides a local-first batch workflow for regression experiments:
-
-- load a CSV dataset
-- build an sklearn preprocessing and regression pipeline
-- search model, hyperparameter, and repeated split choices with Optuna TPE
-- detect tuning plateaus
-- ask an LLM advisor for tuning suggestions when configured
-- write reproducible run artifacts, metrics, trial history, and the fitted best model
+The goal is to let users control the workflow from YAML (dataset, target/features, models, optimization, advisor, outputs) while keeping tuning reproducible and auditable.
 
 All Python commands in this repository should be run through `uv`.
+
+## What this project does
+
+- Loads regression CSV data.
+- Builds sklearn preprocessing + regressor pipelines.
+- Tunes model family and hyperparameters with Optuna (TPE sampler).
+- Supports deterministic repeated train/validation splits.
+- Captures validation metrics (`rmse`, `mae`, `r2`) per trial.
+- Optionally asks an advisor (`mock` or OpenAI-compatible chat completions).
+- Applies only safe structured advisor suggestions (`model_candidates` limited to configured models).
+- Writes reproducible run artifacts (resolved config, metrics, trial history, model, advisor notes, summary).
+
+## Architecture (simple)
+
+```text
+                ┌──────────────────────────────┐
+                │       YAML Config File       │
+                │   (data, models, optimizer,  │
+                │    advisor, output, metric)  │
+                └──────────────┬───────────────┘
+                               │
+                               ▼
+                     ┌──────────────────┐
+                     │ CLI / Python API │
+                     │ load_config(...) │
+                     └────────┬─────────┘
+                              │
+                              ▼
+                    ┌─────────────────────┐
+                    │  Tuning Orchestrator│
+                    │   run_tuning(...)   │
+                    └───────┬─────────────┘
+                            │
+      ┌─────────────────────┼─────────────────────┐
+      ▼                     ▼                     ▼
+┌───────────────┐   ┌───────────────┐    ┌───────────────────┐
+│ Data Loader   │   │ Model Builder │    │ Advisor (optional)│
+│ + Split Logic │   │ sklearn pipe  │    │ mock / openai comp│
+└──────┬────────┘   └──────┬────────┘    └─────────┬─────────┘
+       │                   │                        │
+       └──────────────┬────┴──────────────┬─────────┘
+                      ▼                   ▼
+                ┌────────────────────────────────────┐
+                │ Optuna Study (trials + best trial)│
+                └────────────────┬───────────────────┘
+                                 ▼
+                   ┌─────────────────────────────┐
+                   │ Artifact Writer (runs/...)  │
+                   │ config, metrics, trials,    │
+                   │ model, advisor_advice,      │
+                   │ run_summary                 │
+                   └─────────────────────────────┘
+```
 
 ## Requirements
 
 - `uv`
-- Python 3.12, pinned by `.python-version`
+- Python 3.12 (pinned by `.python-version`)
 
 Install dependencies:
 
@@ -24,9 +70,9 @@ Install dependencies:
 uv sync
 ```
 
-## Quick Start
+## Quick start
 
-Run the checked-in sample workflow:
+Run the bundled sample workflow:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
@@ -39,53 +85,42 @@ Best score: ...
 Artifacts: .../runs/example
 ```
 
-The example trains `linear_regression` five times with different deterministic validation splits and asks the mock advisor after every trial, so it does not require network access or LLM credentials.
+The sample config is intentionally local/offline-friendly:
 
-## Sample Data
-
-The repository includes:
-
-```text
-data/sample_regression.csv
-```
-
-This is a small CSV derived from the built-in sklearn diabetes regression dataset. It includes numeric feature columns, a derived categorical `bmi_band` feature, and the regression target column named `target`.
-
-Regenerate it with:
-
-```bash
-uv run ml-auto-tune make-sample-data --output data/sample_regression.csv --rows 180
-```
+- it tunes `linear_regression`
+- uses repeated deterministic validation splits
+- calls the **mock advisor** on `each_trial`
+- needs no network and no LLM credentials
 
 ## CLI
 
-Run model tuning:
+### Run tuning
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
 ```
 
-Generate sample data:
+### Generate sample data
 
 ```bash
 uv run ml-auto-tune make-sample-data --output data/sample_regression.csv --rows 180
 ```
 
-Available sample-data options:
+Sample-data options:
 
 - `--output`: CSV output path
-- `--rows`: number of rows to include
+- `--rows`: number of rows
 - `--random-state`: deterministic sampling seed
 
-## Configuration
+## Configuration (YAML-first)
 
-The primary interface is a YAML config file. See:
+Primary interface:
 
 ```text
 configs/example.yaml
 ```
 
-Important sections:
+### `data`
 
 - `data.path`: CSV path
 - `data.target`: target column name
@@ -102,7 +137,34 @@ Important sections:
 - `output.directory`: local artifact directory
 - `models`: candidate sklearn regressor families
 
-Supported model names:
+### `optimization`
+
+- `metric` (default `rmse`): one of `rmse`, `mae`, `r2`
+- `n_trials` (default `20`): Optuna trial count
+- `timeout_seconds` (optional): per-optimize timeout
+- `plateau_trials` (default `5`): non-improving trials before plateau action
+- `min_delta` (default `0.001`): minimum change to count as improvement
+- `study_name` (default `ml-auto-tune`)
+- `random_state` (default `42`): TPE seed
+- `repeated_splits` (default `false`): if `true`, uses `data.random_state + trial_number`
+
+### `advisor`
+
+- `enabled` (default `true`)
+- `provider`: `mock` or `openai_compatible`
+- `trigger`: `plateau`, `end`, or `each_trial`
+- optional explicit credentials fields in config:
+  - `api_key`
+  - `base_url`
+  - `model`
+
+### `output`
+
+- `directory`: local artifact directory (e.g. `../runs/example`)
+
+### `models`
+
+Candidate model families:
 
 - `linear_regression`
 - `random_forest`
@@ -111,50 +173,17 @@ Supported model names:
 - `ridge`
 - `elastic_net`
 
-## Artifacts
+## Advisor behavior and safety
 
-Each run writes artifacts under the configured output directory.
+The advisor flow is conservative and auditable:
 
-For the example config, artifacts are written to:
+- Every advisor response is written to `advisor_advice.md`.
+- Validation metrics (`RMSE`, `MAE`, `R2`) are included in advisor context when available.
+- Structured suggestions are parsed, but only known safe controls are applied.
+- In v1, safe auto-applied suggestions are limited to `model_candidates` that match configured model names.
+- Non-safe or non-structured guidance is recorded but not blindly executed.
 
-```text
-runs/example/
-```
-
-Generated files:
-
-- `config.resolved.yaml`: normalized config used by the run
-- `metrics.json`: optimized metric, best score, best params, best split seed, and validation metrics
-- `trials.csv`: Optuna trial history, including split seeds and validation metrics
-- `best_model.joblib`: fitted sklearn pipeline using the best trial parameters
-- `advisor_advice.md`: mock or LLM advisor output
-- `run_summary.md`: concise human-readable run summary
-
-`runs/` is ignored by git because these files are local experiment outputs.
-
-## LLM Advisor
-
-The advisor is optional. The default example uses:
-
-```yaml
-advisor:
-  enabled: true
-  provider: mock
-  trigger: each_trial
-```
-
-The mock advisor is deterministic and intended for local development, tests, and demos.
-
-To use an OpenAI-compatible chat completions endpoint:
-
-```yaml
-advisor:
-  enabled: true
-  provider: openai_compatible
-  trigger: plateau
-```
-
-Set these environment variables:
+For OpenAI-compatible usage, set environment variables:
 
 ```bash
 export ML_AUTO_TUNE_LLM_API_KEY="..."
@@ -162,35 +191,35 @@ export ML_AUTO_TUNE_LLM_BASE_URL="https://api.openai.com/v1"
 export ML_AUTO_TUNE_LLM_MODEL="..."
 ```
 
-Advisor behavior:
+## Artifacts
 
-- receives a compact summary of recent trials, current best score, best params, metric direction, available models, and plateau state
-- receives validation RMSE, MAE, and R2 when advice is requested after a trial or at the end
-- writes all advice to `advisor_advice.md`
-- accepts only safe structured `model_candidates` suggestions that match configured model names
-- applies safe model suggestions by enqueueing compatible Optuna trials
+Each run writes under `output.directory` (example: `runs/example/`):
+
+- `config.resolved.yaml`
+- `metrics.json`
+- `trials.csv`
+- `best_model.joblib`
+- `advisor_advice.md`
+- `run_summary.md`
+
+`runs/` is git-ignored as disposable local output.
 
 ## Python API
 
-The package exports:
-
 ```python
-from ml_auto_tune import TuningConfig, load_config, run_tuning
+from ml_auto_tune import load_config, run_tuning
 
 config = load_config("configs/example.yaml")
 result = run_tuning(config)
 print(result.best_score)
+print(result.metrics)
 ```
 
 Advisor extension points:
 
 ```python
 from ml_auto_tune import Advisor, AdvisorContext, AdvisorResponse
-```
 
-Custom advisors should implement:
-
-```python
 def advise(self, context: AdvisorContext) -> AdvisorResponse:
     ...
 ```
@@ -203,27 +232,36 @@ Run tests:
 uv run pytest
 ```
 
-Run the example workflow:
+Run the sample workflow:
 
 ```bash
 uv run ml-auto-tune run --config configs/example.yaml
 ```
 
-Inspect linear-regression metrics:
+Inspect outputs:
 
 ```bash
 cat runs/example/metrics.json
+cat runs/example/advisor_advice.md
+cat runs/example/run_summary.md
 ```
 
 Useful files:
 
-- `src/ml_auto_tune/config.py`: config dataclasses and YAML parsing
-- `src/ml_auto_tune/models.py`: sklearn preprocessing and model search spaces
-- `src/ml_auto_tune/tuning.py`: Optuna orchestration and artifact writing
+- `src/ml_auto_tune/config.py`: YAML schema parsing/validation
+- `src/ml_auto_tune/data.py`: CSV loading + split logic
+- `src/ml_auto_tune/models.py`: preprocessing + model search spaces
+- `src/ml_auto_tune/tuning.py`: Optuna loop + artifact writing
 - `src/ml_auto_tune/advisor.py`: mock and OpenAI-compatible advisors
-- `src/ml_auto_tune/sample_data.py`: sklearn-derived sample data generation
+- `src/ml_auto_tune/sample_data.py`: sample regression data generator
 - `tests/`: unit and smoke tests
 
-## Current Scope
+## Current scope
 
-This is a v1 local batch workflow. It does not include a scheduler, web service, experiment database, distributed training, or classification support.
+v1 focuses on local batch **regression** tuning. It does not include:
+
+- a web service/UI
+- job scheduler/orchestrator
+- experiment database backend
+- distributed training
+- classification workflows

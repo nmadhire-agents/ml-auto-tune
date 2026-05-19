@@ -157,13 +157,29 @@ Best result:
 }
 ```
 
-The advisor is called once per trial. With `provider: mock`, advice is deterministic and local. A typical advisor note looks like:
+To ask OpenAI for one advisor response after the repeated linear-regression trials, use the OpenAI-compatible provider and `trigger: end`:
 
-```text
-Mock advisor: evaluated the current validation metrics. RMSE=46.4276, MAE=38.3666, R2=0.6024. Linear regression is a useful baseline; treat it as best only after comparing it against regularized linear models and nonlinear tree/boosting models on the same split.
+```yaml
+advisor:
+  enabled: true
+  provider: openai_compatible
+  trigger: end
 ```
 
-With `provider: openai_compatible`, the same trial context is sent to the configured chat completions endpoint. The context includes the current validation metrics, recent trials, best score, available model names, and response schema. The system records all advice in `advisor_advice.md`; it only auto-applies safe structured suggestions that map to configured model candidates.
+Set credentials:
+
+```bash
+export ML_AUTO_TUNE_LLM_API_KEY="$OPENAI_API_KEY"
+export ML_AUTO_TUNE_LLM_MODEL="gpt-4.1-mini"
+```
+
+Run the same five-trial linear-regression workflow. The OpenAI advisor receives the best score, the best split seed, all recent trial metrics, and the final validation metrics. One real OpenAI advisor response for the bundled sample run was:
+
+```text
+The current linear regression model achieves an RMSE of 46.43 and an R² of 0.60, indicating moderate predictive performance. Given the limited model choice (only linear regression allowed) and recent trials showing no improvement beyond this RMSE, the model appears reasonably tuned within these constraints. Consider expanding allowed models or feature engineering to improve performance further.
+```
+
+The system records the advice in `advisor_advice.md`. It only auto-applies safe structured suggestions that map to configured model candidates; free-form guidance is stored for review.
 
 ## CLI
 

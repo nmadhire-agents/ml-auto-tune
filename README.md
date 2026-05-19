@@ -92,6 +92,79 @@ The sample config is intentionally local/offline-friendly:
 - calls the **mock advisor** on `each_trial`
 - needs no network and no LLM credentials
 
+## Real example: repeated linear regression with advice
+
+The bundled example trains the same simple linear regression model multiple times and asks the advisor after every trial.
+
+Key config:
+
+```yaml
+optimization:
+  metric: rmse
+  n_trials: 5
+  repeated_splits: true
+
+advisor:
+  enabled: true
+  provider: mock
+  trigger: each_trial
+
+models:
+  - linear_regression
+```
+
+Because plain `LinearRegression` has no meaningful hyperparameters, the example uses deterministic repeated splits to produce multiple validation views of the same model. Trial `0` uses split seed `42`, trial `1` uses `43`, and so on. The tuner minimizes RMSE and keeps the best observed validation result.
+
+Run it:
+
+```bash
+uv run ml-auto-tune run --config configs/example.yaml
+```
+
+Example output:
+
+```text
+Best score: 46.427628
+Artifacts: /.../runs/example
+```
+
+Observed trial metrics from the bundled sample data:
+
+| Trial | Split seed | Model | RMSE | MAE | R2 |
+| ---: | ---: | --- | ---: | ---: | ---: |
+| 0 | 42 | `linear_regression` | 56.8769 | 47.6459 | 0.4272 |
+| 1 | 43 | `linear_regression` | 46.4276 | 38.3666 | 0.6024 |
+| 2 | 44 | `linear_regression` | 58.4801 | 45.9821 | 0.2480 |
+| 3 | 45 | `linear_regression` | 49.2586 | 40.7508 | 0.5659 |
+| 4 | 46 | `linear_regression` | 51.4164 | 40.0569 | 0.5579 |
+
+Best result:
+
+```json
+{
+  "optimized_metric": "rmse",
+  "direction": "minimize",
+  "best_score": 46.427628004000084,
+  "best_params": {
+    "model": "linear_regression"
+  },
+  "best_split_random_state": 43,
+  "validation_metrics": {
+    "rmse": 46.427628004000084,
+    "mae": 38.36655564277805,
+    "r2": 0.6024026519069032
+  }
+}
+```
+
+The advisor is called once per trial. With `provider: mock`, advice is deterministic and local. A typical advisor note looks like:
+
+```text
+Mock advisor: evaluated the current validation metrics. RMSE=46.4276, MAE=38.3666, R2=0.6024. Linear regression is a useful baseline; treat it as best only after comparing it against regularized linear models and nonlinear tree/boosting models on the same split.
+```
+
+With `provider: openai_compatible`, the same trial context is sent to the configured chat completions endpoint. The context includes the current validation metrics, recent trials, best score, available model names, and response schema. The system records all advice in `advisor_advice.md`; it only auto-applies safe structured suggestions that map to configured model candidates.
+
 ## CLI
 
 ### Run tuning

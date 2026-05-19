@@ -25,6 +25,21 @@ def test_parse_config_resolves_paths(tmp_path: Path) -> None:
     assert config.advisor.trigger == "each_trial"
 
 
+def test_parse_config_with_features(tmp_path: Path) -> None:
+    config = parse_config(
+        {
+            "data": {
+                "path": "sample.csv",
+                "target": "target",
+                "features": ["age", "bmi"],
+            },
+            "models": ["linear_regression"],
+        },
+        base_dir=tmp_path,
+    )
+    assert config.data.features == ("age", "bmi")
+
+
 def test_parse_config_rejects_unknown_model(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Unknown model"):
         parse_config(

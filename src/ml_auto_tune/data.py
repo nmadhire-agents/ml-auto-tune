@@ -14,6 +14,10 @@ def load_regression_frame(settings: DataSettings) -> pd.DataFrame:
     frame = pd.read_csv(settings.path)
     if settings.target not in frame.columns:
         raise ValueError(f"Target column '{settings.target}' not found in {settings.path}.")
+    if settings.features is not None:
+        missing = sorted(set(settings.features) - set(frame.columns))
+        if missing:
+            raise ValueError(f"Configured feature columns not found in {settings.path}: {missing}")
     if len(frame) < 5:
         raise ValueError("Dataset must contain at least 5 rows.")
     return frame
@@ -24,6 +28,7 @@ def split_features_target(settings: DataSettings):
     return split_frame_features_target(
         frame,
         target=settings.target,
+        features=settings.features,
         validation_size=settings.validation_size,
         random_state=settings.random_state,
     )
@@ -32,11 +37,12 @@ def split_features_target(settings: DataSettings):
 def split_frame_features_target(
     frame: pd.DataFrame,
     target: str,
+    features: tuple[str, ...] | None,
     validation_size: float,
     random_state: int,
 ):
     y = frame[target]
-    X = frame.drop(columns=[target])
+    X = frame[list(features)] if features is not None else frame.drop(columns=[target])
     return train_test_split(
         X,
         y,

@@ -1,6 +1,19 @@
 data:
   path: ../data/sample_regression.csv
   target: target
+  # Optional: explicitly choose feature columns. When omitted, all non-target columns are used.
+  features:
+    - age
+    - sex
+    - bmi
+    - bp
+    - s1
+    - s2
+    - s3
+    - s4
+    - s5
+    - s6
+    - bmi_band
   validation_size: 0.25
   random_state: 42
 

@@ -142,7 +142,10 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
 
     default_models = ("logistic_regression",) if task == "classification" else ("linear_regression",)
     allowed_models = CLASSIFICATION_MODELS if task == "classification" else REGRESSION_MODELS
-    model_names = tuple(raw.get("models", default_models))
+    models_raw = raw.get("models", default_models)
+    if not isinstance(models_raw, list | tuple) or not all(isinstance(item, str) for item in models_raw):
+        raise ValueError("models must be a list of model names.")
+    model_names = tuple(models_raw)
     unknown_models = sorted(set(model_names) - allowed_models)
     if unknown_models:
         raise ValueError(f"Unknown model names for task '{task}': {unknown_models}.")
@@ -151,6 +154,8 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
 
     timeout_value = opt_raw.get("timeout_seconds")
     timeout_seconds = int(timeout_value) if timeout_value is not None else None
+    if timeout_seconds is not None and timeout_seconds < 1:
+        raise ValueError("optimization.timeout_seconds must be at least 1 when provided.")
 
     trigger = str(advisor_raw.get("trigger", "plateau"))
     if trigger not in {"plateau", "end", "each_trial"}:
@@ -159,6 +164,9 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     provider = str(advisor_raw.get("provider", "mock"))
     if provider not in {"mock", "openai_compatible"}:
         raise ValueError("advisor.provider must be 'mock' or 'openai_compatible'.")
+
+    advisor_enabled = _as_bool(advisor_raw.get("enabled", True), "advisor.enabled")
+    repeated_splits = _as_bool(opt_raw.get("repeated_splits", False), "optimization.repeated_splits")
 
     output_directory = _resolve_path(output_raw.get("directory", "runs/latest"), base)
 
@@ -179,10 +187,10 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
             min_delta=float(opt_raw.get("min_delta", 0.001)),
             study_name=str(opt_raw.get("study_name", "ml-auto-tune")),
             random_state=int(opt_raw.get("random_state", 42)),
-            repeated_splits=bool(opt_raw.get("repeated_splits", False)),
+            repeated_splits=repeated_splits,
         ),
         advisor=AdvisorSettings(
-            enabled=bool(advisor_raw.get("enabled", True)),
+            enabled=advisor_enabled,
             provider=provider,
             trigger=trigger,
             api_key=advisor_raw.get("api_key"),
@@ -207,3 +215,11 @@ def _resolve_path(value: str | Path, base: Path) -> Path:
     if not path.is_absolute():
         path = base / path
     return path.resolve()
+
+
+def _as_bool(value: Any, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    raise ValueError(f"{name} must be a boolean.")

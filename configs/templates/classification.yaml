@@ -1,0 +1,39 @@
+# Generic classification tuning template.
+# Copy this file and update paths, target/features, models, and output directory.
+task: classification
+
+data:
+  path: /absolute/or/relative/path/to/your_classification_data.csv
+  target: target_column_name
+  # Optional. Omit this field to use all non-target columns.
+  # features:
+  #   - feature_1
+  #   - feature_2
+  validation_size: 0.25
+  random_state: 42
+
+optimization:
+  metric: f1_macro # accuracy, f1_macro, or roc_auc
+  n_trials: 30
+  plateau_trials: 5
+  min_delta: 0.001
+  study_name: my-classification-run
+  random_state: 42
+  repeated_splits: false
+
+advisor:
+  enabled: false
+  provider: mock # mock or openai_compatible
+  trigger: plateau # plateau, end, or each_trial
+  # For openai_compatible, prefer env vars:
+  # ML_AUTO_TUNE_LLM_API_KEY, ML_AUTO_TUNE_LLM_BASE_URL, ML_AUTO_TUNE_LLM_MODEL
+
+output:
+  directory: runs/my-classification-run
+
+models:
+  - logistic_regression
+  - random_forest_classifier
+  - extra_trees_classifier
+  - hist_gradient_boosting_classifier
+

@@ -511,11 +511,102 @@ Sample-data options:
 
 ## Configuration (YAML-first)
 
-Primary interface:
+Use the bundled example configs to run the repo immediately:
 
 ```text
 configs/example.yaml
 configs/classification_example.yaml
+```
+
+Use the generic templates when adapting the tool to your own dataset:
+
+```text
+configs/templates/regression.yaml
+configs/templates/classification.yaml
+```
+
+Copy a template, then change:
+
+- `task`
+- `data.path`
+- `data.target`
+- optional `data.features`
+- `optimization.metric`
+- `models`
+- `advisor`
+- `output.directory`
+
+Relative paths in config files are resolved relative to the config file location. Absolute paths also work.
+
+### Generic Regression Template
+
+```yaml
+task: regression
+
+data:
+  path: /absolute/or/relative/path/to/your_regression_data.csv
+  target: target_column_name
+  validation_size: 0.25
+  random_state: 42
+
+optimization:
+  metric: rmse
+  n_trials: 30
+  plateau_trials: 5
+  min_delta: 0.001
+  study_name: my-regression-run
+  random_state: 42
+  repeated_splits: false
+
+advisor:
+  enabled: false
+  provider: mock
+  trigger: plateau
+
+output:
+  directory: runs/my-regression-run
+
+models:
+  - linear_regression
+  - ridge
+  - elastic_net
+  - random_forest
+  - hist_gradient_boosting
+```
+
+### Generic Classification Template
+
+```yaml
+task: classification
+
+data:
+  path: /absolute/or/relative/path/to/your_classification_data.csv
+  target: target_column_name
+  validation_size: 0.25
+  random_state: 42
+
+optimization:
+  metric: f1_macro
+  n_trials: 30
+  plateau_trials: 5
+  min_delta: 0.001
+  study_name: my-classification-run
+  random_state: 42
+  repeated_splits: false
+
+advisor:
+  enabled: false
+  provider: mock
+  trigger: plateau
+
+output:
+  directory: runs/my-classification-run
+
+models:
+  - logistic_regression
+  - random_forest_classifier
+  - extra_trees_classifier
+  - hist_gradient_boosting_classifier
 ```
 
 ### `task`
@@ -542,7 +633,7 @@ configs/classification_example.yaml
 
 ### `optimization`
 
-- `metric` (default `rmse`): one of `rmse`, `mae`, `r2`
+- `metric`: regression uses `rmse`, `mae`, or `r2`; classification uses `accuracy`, `f1_macro`, or `roc_auc`
 - `n_trials` (default `20`): Optuna trial count
 - `timeout_seconds` (optional): per-optimize timeout
 - `plateau_trials` (default `5`): non-improving trials before plateau action
@@ -560,6 +651,8 @@ configs/classification_example.yaml
   - `api_key`
   - `base_url`
   - `model`
+
+For reusable configs, prefer environment variables over hardcoded credentials.
 
 ### `output`
 

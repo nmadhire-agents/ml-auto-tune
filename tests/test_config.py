@@ -78,3 +78,25 @@ def test_parse_config_rejects_unknown_model(tmp_path: Path) -> None:
             },
             base_dir=tmp_path,
         )
+
+
+def test_parse_config_rejects_non_list_models(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="models must be a list"):
+        parse_config(
+            {
+                "data": {"path": "sample.csv", "target": "target"},
+                "models": "linear_regression",
+            },
+            base_dir=tmp_path,
+        )
+
+
+def test_parse_config_rejects_non_boolean_flags(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="optimization.repeated_splits"):
+        parse_config(
+            {
+                "data": {"path": "sample.csv", "target": "target"},
+                "optimization": {"repeated_splits": "yes"},
+            },
+            base_dir=tmp_path,
+        )

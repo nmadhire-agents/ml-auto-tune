@@ -400,6 +400,92 @@ The advisor note for this run is stored in `runs/classification-example/advisor_
 Mock advisor: evaluated the current validation metrics. Accuracy=0.9778, F1 macro=0.9754, ROC-AUC=0.9978. Confirm class balance and compare a linear classifier against tree-based classifiers before declaring the model best.
 ```
 
+To ask OpenAI for one classification advisor response instead of the mock advisor, switch the advisor provider:
+
+```yaml
+advisor:
+  enabled: true
+  provider: openai_compatible
+  trigger: end
+```
+
+Set credentials:
+
+```bash
+export ML_AUTO_TUNE_LLM_API_KEY="$OPENAI_API_KEY"
+export ML_AUTO_TUNE_LLM_MODEL="gpt-4.1-mini"
+```
+
+The classification advisor prompt includes the task, optimized metric, current best classifier, recent trial metrics, final validation metrics, and the allowed model list. A compact excerpt of the prompt looks like this:
+
+```json
+{
+  "study_name": "sample-classification",
+  "task": "classification",
+  "metric": "f1_macro",
+  "direction": "maximize",
+  "best_score": 0.9753963914707491,
+  "best_params": {
+    "model": "random_forest_classifier",
+    "rf_classifier_n_estimators": 50,
+    "rf_classifier_max_depth": 18,
+    "rf_classifier_min_samples_leaf": 8,
+    "rf_classifier_max_features": 0.8850384088698767
+  },
+  "trials_since_improvement": 2,
+  "allowed_models": [
+    "hist_gradient_boosting_classifier",
+    "logistic_regression",
+    "random_forest_classifier"
+  ],
+  "recent_trials": [
+    {
+      "number": 5,
+      "value": 0.9753963914707491,
+      "params": {
+        "model": "random_forest_classifier"
+      },
+      "split_random_state": 47,
+      "validation_metrics": {
+        "accuracy": 0.9777777777777777,
+        "f1_macro": 0.9753963914707491,
+        "roc_auc": 0.9978448275862069
+      }
+    },
+    {
+      "number": 6,
+      "value": 0.9753963914707491,
+      "params": {
+        "model": "hist_gradient_boosting_classifier"
+      },
+      "split_random_state": 48,
+      "validation_metrics": {
+        "accuracy": 0.9777777777777777,
+        "f1_macro": 0.9753963914707491,
+        "roc_auc": 1.0
+      }
+    }
+  ],
+  "validation_metrics": {
+    "accuracy": 0.9777777777777777,
+    "f1_macro": 0.9753963914707491,
+    "roc_auc": 0.9978448275862069
+  },
+  "response_schema": {
+    "markdown": "human-readable tuning advice",
+    "structured_suggestions": {
+      "model_candidates": "optional list containing only allowed model names"
+    }
+  }
+}
+```
+
+The real OpenAI advisor response for the classification run was:
+
+```text
+The current best model, a random forest classifier, achieves a very strong f1_macro score of 0.9754 with high accuracy (0.978) and ROC AUC (0.998). A hist_gradient_boosting_classifier trial also matched this top score, indicating both models perform excellently. Logistic regression models lag behind significantly in f1_macro (~0.95 or below). Given the recent trials show no improvement after 2 attempts, the tuning appears to have converged. To potentially improve further, focusing on the two top-performing models (random forest and hist gradient boosting) is recommended.
+```
+
 ## CLI
 
 ### Run tuning

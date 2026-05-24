@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from ml_auto_tune.autoresearch import run_autoresearch
 from ml_auto_tune.config import load_config
 from ml_auto_tune.sample_data import make_sample_data
 from ml_auto_tune.tuning import run_tuning
@@ -14,6 +15,9 @@ def main(argv: list[str] | None = None) -> None:
 
     run_parser = subparsers.add_parser("run", help="Run model tuning from a YAML config.")
     run_parser.add_argument("--config", required=True, help="Path to a tuning YAML config.")
+
+    research_parser = subparsers.add_parser("autoresearch", help="Run bounded config-only autoresearch.")
+    research_parser.add_argument("--config", required=True, help="Path to an autoresearch YAML config.")
 
     sample_parser = subparsers.add_parser("make-sample-data", help="Generate the bundled sample CSV.")
     sample_parser.add_argument("--output", default="data/sample_regression.csv", help="CSV output path.")
@@ -31,6 +35,14 @@ def main(argv: list[str] | None = None) -> None:
         config = load_config(args.config)
         result = run_tuning(config)
         print(f"Best score: {result.best_score:.6f}")
+        print(f"Artifacts: {result.output_directory}")
+        return
+
+    if args.command == "autoresearch":
+        config = load_config(args.config)
+        result = run_autoresearch(config)
+        print(f"Best score: {result.best_experiment.score:.6f}")
+        print(f"Best experiment: {result.best_experiment.experiment_id:03d}")
         print(f"Artifacts: {result.output_directory}")
         return
 

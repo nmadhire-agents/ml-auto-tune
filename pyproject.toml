@@ -1,7 +1,7 @@
 [project]
 name = "ml-auto-tune"
 version = "0.1.0"
-description = "Auto-tune sklearn regression models with Optuna and optional LLM advice."
+description = "Auto-tune sklearn models with Optuna, optional LLM advice, and config-only autoresearch."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -28,4 +28,3 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-

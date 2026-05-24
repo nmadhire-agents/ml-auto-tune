@@ -28,6 +28,13 @@ advisor:
   # For openai_compatible, prefer env vars:
   # ML_AUTO_TUNE_LLM_API_KEY, ML_AUTO_TUNE_LLM_BASE_URL, ML_AUTO_TUNE_LLM_MODEL
 
+research:
+  enabled: false
+  max_experiments: 10
+  improvement_min_delta: 0.001
+  llm_enabled: false
+  # program_path: configs/research_program.md
+
 output:
   directory: runs/my-classification-run
 
@@ -36,4 +43,3 @@ models:
   - random_forest_classifier
   - extra_trees_classifier
   - hist_gradient_boosting_classifier
-

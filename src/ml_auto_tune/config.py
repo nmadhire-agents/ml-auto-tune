@@ -64,12 +64,22 @@ class OutputSettings:
 
 
 @dataclass(frozen=True)
+class ResearchSettings:
+    enabled: bool = False
+    max_experiments: int = 10
+    improvement_min_delta: float = 0.001
+    llm_enabled: bool = False
+    program_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class TuningConfig:
     data: DataSettings
     task: str = "regression"
     optimization: OptimizationSettings = field(default_factory=OptimizationSettings)
     advisor: AdvisorSettings = field(default_factory=AdvisorSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
+    research: ResearchSettings = field(default_factory=ResearchSettings)
     models: tuple[str, ...] = ("linear_regression",)
 
     @property
@@ -82,6 +92,8 @@ class TuningConfig:
         result = asdict(self)
         result["data"]["path"] = str(self.data.path)
         result["output"]["directory"] = str(self.output.directory)
+        if self.research.program_path is not None:
+            result["research"]["program_path"] = str(self.research.program_path)
         result["models"] = list(self.models)
         result["direction"] = self.direction
         return result
@@ -106,6 +118,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
     opt_raw = _mapping(raw.get("optimization", {}), "optimization")
     advisor_raw = _mapping(raw.get("advisor", {}), "advisor")
     output_raw = _mapping(raw.get("output", {}), "output")
+    research_raw = _mapping(raw.get("research", {}), "research")
 
     target = data_raw.get("target")
     if not target:
@@ -122,7 +135,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
 
     features_raw = data_raw.get("features")
     if features_raw is not None:
-        if not isinstance(features_raw, list) or not all(isinstance(item, str) for item in features_raw):
+        if not isinstance(features_raw, list | tuple) or not all(isinstance(item, str) for item in features_raw):
             raise ValueError("data.features must be a list of column names.")
         if not features_raw:
             raise ValueError("data.features must include at least one column when provided.")
@@ -170,6 +183,17 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
 
     output_directory = _resolve_path(output_raw.get("directory", "runs/latest"), base)
 
+    research_enabled = _as_bool(research_raw.get("enabled", False), "research.enabled")
+    research_llm_enabled = _as_bool(research_raw.get("llm_enabled", False), "research.llm_enabled")
+    research_max_experiments = int(research_raw.get("max_experiments", 10))
+    if research_max_experiments < 1:
+        raise ValueError("research.max_experiments must be at least 1.")
+    research_improvement_min_delta = float(research_raw.get("improvement_min_delta", 0.001))
+    if research_improvement_min_delta < 0:
+        raise ValueError("research.improvement_min_delta must be non-negative.")
+    program_path_value = research_raw.get("program_path")
+    program_path = _resolve_path(program_path_value, base) if program_path_value else None
+
     return TuningConfig(
         task=task,
         data=DataSettings(
@@ -198,6 +222,13 @@ def parse_config(raw: dict[str, Any], base_dir: Path | None = None) -> TuningCon
             model=advisor_raw.get("model"),
         ),
         output=OutputSettings(directory=output_directory),
+        research=ResearchSettings(
+            enabled=research_enabled,
+            max_experiments=research_max_experiments,
+            improvement_min_delta=research_improvement_min_delta,
+            llm_enabled=research_llm_enabled,
+            program_path=program_path,
+        ),
         models=model_names,
     )
 

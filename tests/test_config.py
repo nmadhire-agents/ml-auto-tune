@@ -100,3 +100,24 @@ def test_parse_config_rejects_non_boolean_flags(tmp_path: Path) -> None:
             },
             base_dir=tmp_path,
         )
+
+
+def test_parse_research_config_resolves_program_path(tmp_path: Path) -> None:
+    config = parse_config(
+        {
+            "data": {"path": "sample.csv", "target": "target"},
+            "research": {
+                "enabled": True,
+                "max_experiments": 3,
+                "improvement_min_delta": 0.01,
+                "llm_enabled": False,
+                "program_path": "program.md",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.research.enabled is True
+    assert config.research.max_experiments == 3
+    assert config.research.improvement_min_delta == 0.01
+    assert config.research.program_path == tmp_path / "program.md"

@@ -1,0 +1,46 @@
+task: regression
+
+data:
+  path: ../data/sample_regression.csv
+  target: target
+  features:
+    - age
+    - sex
+    - bmi
+    - bp
+    - s1
+    - s2
+    - s3
+    - s4
+    - s5
+    - s6
+    - bmi_band
+  validation_size: 0.25
+  random_state: 42
+
+optimization:
+  metric: rmse
+  n_trials: 3
+  plateau_trials: 2
+  min_delta: 0.001
+  study_name: sample-autoresearch
+  random_state: 42
+  repeated_splits: true
+
+advisor:
+  enabled: false
+  provider: mock
+  trigger: end
+
+research:
+  enabled: true
+  max_experiments: 4
+  improvement_min_delta: 0.001
+  llm_enabled: false
+  program_path: research_program.md
+
+output:
+  directory: ../runs/autoresearch-example
+
+models:
+  - linear_regression

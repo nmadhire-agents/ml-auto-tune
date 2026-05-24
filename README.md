@@ -1,6 +1,6 @@
 # ml-auto-tune
 
-Config-driven local batch tuning for tabular **sklearn regression and classification** with Optuna and optional LLM advice.
+Config-driven local batch tuning for tabular **sklearn regression and classification** with Optuna, optional LLM advice, and bounded config-only autoresearch.
 
 The goal is to let users control the workflow from YAML (dataset, target/features, models, optimization, advisor, outputs) while keeping tuning reproducible and auditable.
 
@@ -17,48 +17,69 @@ All Python commands in this repository should be run through `uv`.
   - Classification: `accuracy`, `f1_macro`, `roc_auc`
 - Optionally asks an advisor (`mock` or OpenAI-compatible chat completions).
 - Applies only safe structured advisor suggestions (`model_candidates` limited to configured models).
+- Can run bounded config-only autoresearch loops that keep better experiment configs and discard regressions.
 - Writes reproducible run artifacts (resolved config, metrics, trial history, model, advisor notes, summary).
 
-## Architecture (simple)
+## Architecture
 
 ```text
-                ┌──────────────────────────────┐
-                │       YAML Config File       │
-                │   (data, models, optimizer,  │
-                │    advisor, output, metric)  │
-                └──────────────┬───────────────┘
-                               │
-                               ▼
-                     ┌──────────────────┐
-                     │ CLI / Python API │
-                     │ load_config(...) │
-                     └────────┬─────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │  Tuning Orchestrator│
-                    │   run_tuning(...)   │
-                    └───────┬─────────────┘
-                            │
-      ┌─────────────────────┼─────────────────────┐
-      ▼                     ▼                     ▼
-┌───────────────┐   ┌───────────────┐    ┌───────────────────┐
-│ Data Loader   │   │ Model Builder │    │ Advisor (optional)│
-│ + Split Logic │   │ sklearn pipe  │    │ mock / openai comp│
-└──────┬────────┘   └──────┬────────┘    └─────────┬─────────┘
-       │                   │                        │
-       └──────────────┬────┴──────────────┬─────────┘
-                      ▼                   ▼
-                ┌────────────────────────────────────┐
-                │ Optuna Study (trials + best trial)│
-                └────────────────┬───────────────────┘
-                                 ▼
-                   ┌─────────────────────────────┐
-                   │ Artifact Writer (runs/...)  │
-                   │ config, metrics, trials,    │
-                   │ model, advisor_advice,      │
-                   │ run_summary                 │
-                   └─────────────────────────────┘
+                   ┌──────────────────────────────┐
+                   │          YAML Config          │
+                   │ task, data, models, metric,   │
+                   │ advisor, research, output     │
+                   └───────────────┬──────────────┘
+                                   │
+                                   ▼
+                         ┌──────────────────┐
+                         │ CLI / Python API │
+                         │  load_config()   │
+                         └───────┬──────────┘
+                                 │
+                  ┌──────────────┴──────────────┐
+                  │                             │
+                  ▼                             ▼
+        ┌──────────────────┐          ┌────────────────────┐
+        │ run              │          │ autoresearch       │
+        │ run_tuning()     │          │ run_autoresearch() │
+        └────────┬─────────┘          └─────────┬──────────┘
+                 │                              │
+                 │                     ┌────────▼─────────┐
+                 │                     │ Baseline config  │
+                 │                     │ + safe patches   │
+                 │                     │ + LLM/fallback   │
+                 │                     │ suggestions      │
+                 │                     └────────┬─────────┘
+                 │                              │
+                 └──────────────┬───────────────┘
+                                ▼
+                    ┌───────────────────────┐
+                    │ Tuning Orchestrator   │
+                    │ Optuna trials         │
+                    └───────────┬───────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+┌───────────────┐       ┌───────────────┐       ┌──────────────────┐
+│ Data Loader   │       │ Model Builder │       │ Advisor          │
+│ CSV + split   │       │ sklearn pipe  │       │ mock/OpenAI      │
+└───────┬───────┘       └───────┬───────┘       └────────┬─────────┘
+        │                       │                        │
+        └───────────────────────┴──────────────┬─────────┘
+                                               ▼
+                                  ┌────────────────────────┐
+                                  │ Artifacts in runs/     │
+                                  │ metrics, trials, model │
+                                  │ advice, research log   │
+                                  └────────────────────────┘
+```
+
+Autoresearch is a bounded loop around the normal tuning command. It writes a generated config for each experiment, runs the same tuning engine, then keeps or discards the result based on the configured metric.
+
+```text
+baseline ──► experiment_001 ──► experiment_002 ──► ... ──► best_config.yaml
+   │              │                  │                         │
+   ▼              ▼                  ▼                         ▼
+ keep        keep/discard       keep/discard           best_metrics.json
 ```
 
 ## Requirements
@@ -107,6 +128,20 @@ Best score: ...
 Artifacts: .../runs/classification-example
 ```
 
+Run bounded config-only autoresearch:
+
+```bash
+uv run ml-auto-tune autoresearch --config configs/research_example.yaml
+```
+
+Expected output:
+
+```text
+Best score: ...
+Best experiment: ...
+Artifacts: .../runs/autoresearch-example
+```
+
 ## LLM advisor: what changes?
 
 The optimizer does not require an LLM. Optuna still runs trials, scores models, selects the best trial, and writes artifacts without any advisor.
@@ -118,6 +153,34 @@ The optimizer does not require an LLM. Optuna still runs trials, scores models, 
 | OpenAI-compatible advisor | Sends compact trial history, metrics, current best result, model choices, and response schema to an LLM. | Human-readable diagnosis, suggestions for next search-space changes, warnings about weak baselines, and a written explanation in `advisor_advice.md`. | It does not replace validation metrics, and v1 only auto-applies safe structured `model_candidates` suggestions. Free-form advice is recorded for review. |
 
 Use an LLM when you want help interpreting the run, deciding whether the model is likely “good enough,” or choosing what to try next after a plateau. Skip the LLM when you only need repeatable metric-driven tuning.
+
+## Autoresearch: what changes?
+
+Autoresearch is inspired by `karpathy/autoresearch`, but adapted to this repo as a safe config-only loop. It does not edit Python files, install packages, reset git, or commit experiment code. It runs bounded experiments by generating YAML configs, executing the existing tuner, and logging keep/discard decisions.
+
+Autoresearch loop:
+
+1. Run the baseline config.
+2. Record metrics and artifacts.
+3. Ask a research advisor for the next safe `config_patch`, or use deterministic fallback suggestions.
+4. Validate the patch against the safe schema.
+5. Run the generated experiment config.
+6. Mark the result `keep`, `discard`, or `crash`.
+7. Stop after `research.max_experiments`.
+
+Safe autoresearch patches are limited to:
+
+- `models`
+- `optimization.n_trials`
+- `optimization.repeated_splits`
+- `optimization.plateau_trials`
+- `optimization.min_delta`
+- `data.features`
+- `advisor.enabled`
+- `advisor.provider`
+- `advisor.trigger`
+
+Use autoresearch when you want the tool to explore safe model/search-space changes over multiple experiments. Use normal `run` when you want one explicit tuning run.
 
 ## Real example: repeated linear regression with advice
 
@@ -495,6 +558,12 @@ uv run ml-auto-tune run --config configs/example.yaml
 uv run ml-auto-tune run --config configs/classification_example.yaml
 ```
 
+### Run autoresearch
+
+```bash
+uv run ml-auto-tune autoresearch --config configs/research_example.yaml
+```
+
 ### Generate sample data
 
 ```bash
@@ -516,6 +585,7 @@ Use the bundled example configs to run the repo immediately:
 ```text
 configs/example.yaml
 configs/classification_example.yaml
+configs/research_example.yaml
 ```
 
 Use the generic templates when adapting the tool to your own dataset:
@@ -534,6 +604,7 @@ Copy a template, then change:
 - `optimization.metric`
 - `models`
 - `advisor`
+- `research`
 - `output.directory`
 
 Relative paths in config files are resolved relative to the config file location. Absolute paths also work.
@@ -562,6 +633,12 @@ advisor:
   enabled: false
   provider: mock
   trigger: plateau
+
+research:
+  enabled: false
+  max_experiments: 10
+  improvement_min_delta: 0.001
+  llm_enabled: false
 
 output:
   directory: runs/my-regression-run
@@ -598,6 +675,12 @@ advisor:
   enabled: false
   provider: mock
   trigger: plateau
+
+research:
+  enabled: false
+  max_experiments: 10
+  improvement_min_delta: 0.001
+  llm_enabled: false
 
 output:
   directory: runs/my-classification-run
@@ -654,6 +737,14 @@ models:
 
 For reusable configs, prefer environment variables over hardcoded credentials.
 
+### `research`
+
+- `enabled` (default `false`): must be true for `ml-auto-tune autoresearch`
+- `max_experiments` (default `10`): bounded experiment count, including baseline
+- `improvement_min_delta` (default `0.001`): minimum improvement required to mark a non-baseline experiment `keep`
+- `llm_enabled` (default `false`): use OpenAI-compatible research suggestions when true; otherwise deterministic fallback suggestions are used
+- `program_path` (optional): Markdown research program that defines goals and safe operating rules
+
 ### `output`
 
 - `directory`: local artifact directory (e.g. `../runs/example`)
@@ -707,17 +798,31 @@ Each run writes under `output.directory` (example: `runs/example/`):
 - `advisor_advice.md`
 - `run_summary.md`
 
+Autoresearch writes additional artifacts under its configured output directory:
+
+- `research_results.tsv`
+- `research_log.md`
+- `configs/experiment_000.yaml`, `configs/experiment_001.yaml`, ...
+- `experiments/experiment_000/`, `experiments/experiment_001/`, ...
+- `best_config.yaml`
+- `best_metrics.json`
+- `llm_suggestions.jsonl`
+
 `runs/` is git-ignored as disposable local output.
 
 ## Python API
 
 ```python
-from ml_auto_tune import load_config, run_tuning
+from ml_auto_tune import load_config, run_autoresearch, run_tuning
 
 config = load_config("configs/example.yaml")
 result = run_tuning(config)
 print(result.best_score)
 print(result.metrics)
+
+research_config = load_config("configs/research_example.yaml")
+research_result = run_autoresearch(research_config)
+print(research_result.best_experiment.score)
 ```
 
 Advisor extension points:

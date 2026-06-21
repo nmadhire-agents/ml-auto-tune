@@ -25,8 +25,9 @@ advisor:
   enabled: false
   provider: mock # mock or openai_compatible
   trigger: plateau # plateau, end, or each_trial
-  # For openai_compatible, prefer env vars:
+  # For remote openai_compatible usage, prefer env vars:
   # ML_AUTO_TUNE_LLM_API_KEY, ML_AUTO_TUNE_LLM_BASE_URL, ML_AUTO_TUNE_LLM_MODEL
+  # For a local server, set base_url: http://127.0.0.1:8000/v1 and omit api_key/model.
 
 research:
   enabled: false

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +18,7 @@ from ml_auto_tune.config import (
     TuningConfig,
     parse_config,
 )
+from ml_auto_tune.llm import resolve_llm_settings
 from ml_auto_tune.tuning import RunResult, run_tuning
 
 SAFE_PATCH_KEYS = {
@@ -105,23 +105,14 @@ class DeterministicResearchAdvisor:
 
 class OpenAIResearchAdvisor:
     def __init__(self, config: TuningConfig):
-        self.api_key = config.advisor.api_key or os.getenv("ML_AUTO_TUNE_LLM_API_KEY")
-        self.base_url = config.advisor.base_url or os.getenv("ML_AUTO_TUNE_LLM_BASE_URL") or "https://api.openai.com/v1"
-        self.model = config.advisor.model or os.getenv("ML_AUTO_TUNE_LLM_MODEL")
-        if not self.api_key:
-            raise ValueError("ML_AUTO_TUNE_LLM_API_KEY is required for LLM autoresearch.")
-        if not self.model:
-            raise ValueError("ML_AUTO_TUNE_LLM_MODEL is required for LLM autoresearch.")
+        self.settings = resolve_llm_settings(config.advisor, "LLM autoresearch")
 
     def suggest(self, context: dict[str, Any]) -> ResearchSuggestion:
         response = httpx.post(
-            f"{self.base_url.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            f"{self.settings.base_url.rstrip('/')}/chat/completions",
+            headers=self.settings.headers,
             json={
-                "model": self.model,
+                "model": self.settings.model,
                 "messages": [
                     {
                         "role": "system",

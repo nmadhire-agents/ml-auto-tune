@@ -28,8 +28,10 @@ optimization:
 
 advisor:
   enabled: true
-  provider: mock
+  provider: openai_compatible
   trigger: each_trial
+  base_url: http://127.0.0.1:8000/v1
+  # model is discovered from GET http://127.0.0.1:8000/v1/models when omitted.
 
 output:
   directory: ../runs/example

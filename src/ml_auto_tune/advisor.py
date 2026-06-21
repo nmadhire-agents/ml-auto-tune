@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -9,6 +8,7 @@ from typing import Any, Protocol
 import httpx
 
 from ml_auto_tune.config import AdvisorSettings
+from ml_auto_tune.llm import resolve_llm_settings
 
 
 @dataclass(frozen=True)
@@ -86,24 +86,15 @@ class MockAdvisor:
 
 class OpenAICompatibleAdvisor:
     def __init__(self, settings: AdvisorSettings):
-        self.api_key = settings.api_key or os.getenv("ML_AUTO_TUNE_LLM_API_KEY")
-        self.base_url = settings.base_url or os.getenv("ML_AUTO_TUNE_LLM_BASE_URL") or "https://api.openai.com/v1"
-        self.model = settings.model or os.getenv("ML_AUTO_TUNE_LLM_MODEL")
-        if not self.api_key:
-            raise ValueError("ML_AUTO_TUNE_LLM_API_KEY is required for the OpenAI-compatible advisor.")
-        if not self.model:
-            raise ValueError("ML_AUTO_TUNE_LLM_MODEL is required for the OpenAI-compatible advisor.")
+        self.settings = resolve_llm_settings(settings, "the OpenAI-compatible advisor")
 
     def advise(self, context: AdvisorContext) -> AdvisorResponse:
         prompt = _build_prompt(context)
         response = httpx.post(
-            f"{self.base_url.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            f"{self.settings.base_url.rstrip('/')}/chat/completions",
+            headers=self.settings.headers,
             json={
-                "model": self.model,
+                "model": self.settings.model,
                 "messages": [
                     {
                         "role": "system",

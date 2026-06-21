@@ -28,15 +28,17 @@ optimization:
   repeated_splits: true
 
 advisor:
-  enabled: false
-  provider: mock
+  enabled: true
+  provider: openai_compatible
   trigger: end
+  base_url: http://127.0.0.1:8000/v1
+  # model is discovered from GET http://127.0.0.1:8000/v1/models when omitted.
 
 research:
   enabled: true
   max_experiments: 4
   improvement_min_delta: 0.001
-  llm_enabled: false
+  llm_enabled: true
   program_path: research_program.md
 
 output:

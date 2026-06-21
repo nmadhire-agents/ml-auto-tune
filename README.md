@@ -275,6 +275,13 @@ export ML_AUTO_TUNE_LLM_BASE_URL="https://api.openai.com/v1"
 export ML_AUTO_TUNE_LLM_MODEL="gpt-4.1-mini"
 ```
 
+For a local OpenAI-compatible server, no API key is required and the model can be
+discovered from `GET /v1/models`:
+
+```bash
+export ML_AUTO_TUNE_LLM_BASE_URL="http://127.0.0.1:8000/v1"
+```
+
 Then set the config advisor provider:
 
 ```yaml
@@ -282,6 +289,7 @@ advisor:
   enabled: true
   provider: openai_compatible
   trigger: end
+  base_url: http://127.0.0.1:8000/v1
 ```
 
 ## Project Architecture
